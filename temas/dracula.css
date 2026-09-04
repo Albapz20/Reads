@@ -1,0 +1,32 @@
+:root {
+    /* Perfil y General */
+    --bg-main: #282a36;
+    --card-bg: #44475a;
+    --chip-bg: #343746;
+    --border-color: #bd93f9;
+    --text-main: #f8f8f2;
+    --text-muted: #6272a4;
+    --accent-blue: #ff79c6;
+    --btn-sec-bg: #343746;
+    --avatar-bg: #50fa7b;
+    --avatar-text: #282a36;
+
+    /* Biblioteca y Estanterías */
+    --bg-biblioteca: #282a36;
+    --texto-biblioteca: #f8f8f2;
+    --madera-balda: linear-gradient(to bottom, #bd93f9, #9562df 40%, #6272a4);
+    --borde-estanteria: #bd93f9;
+    --selector-bg: #44475a;
+    --selector-borde: #ff79c6;
+}
+
+body { background: var(--bg-main); color: var(--text-main); font-family: "Segoe UI", sans-serif; }
+.container { max-width: 1000px; margin: auto; padding: 20px; }
+.panel, .perfil-card { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+.panel-header h1, .panel-header h2 { color: var(--accent-blue); }
+.review-card, .panel-libro-item { background: var(--chip-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 15px; margin-bottom: 15px; }
+button, .btn-primary { background: var(--accent-blue); color: #ffffff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+button:hover { filter: brightness(1.1); }
+a { color: var(--avatar-bg); font-weight: bold; }
+.barra-progreso, .barra-progreso-bg { background: var(--chip-bg); height: 10px; border-radius: 6px; }
+.barra-progreso-inner, .barra-progreso-fill { background: var(--avatar-bg); height: 100%; }

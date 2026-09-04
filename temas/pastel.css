@@ -1,0 +1,77 @@
+body {
+    background: #fdf6f9;
+    color: #444;
+    font-family: "Segoe UI", sans-serif;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+    padding: 20px;
+}
+
+.panel {
+    background: #fff;
+    border: 2px solid #ffd6e8;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.panel-header h1, .panel-header h2 {
+    color: #ff8fb1;
+}
+
+.review-card {
+    background: #fff7fb;
+    border: 1px solid #ffcce0;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+button {
+    background: #ff8fb1;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+button:hover {
+    background: #ff6f9f;
+}
+
+a {
+    color: #ff8fb1;
+    font-weight: bold;
+}
+
+.barra-progreso {
+    background: #ffd6e8;
+    height: 10px;
+    border-radius: 6px;
+}
+
+.barra-progreso-inner {
+    background: #ff8fb1;
+    height: 100%;
+}
+:root {
+    --bg-biblioteca: #fdf8f5;
+    --texto-biblioteca: #5c4b51;
+    --madera-balda: linear-gradient(to bottom, #e3ad98, #d49882 40%, #b87963);
+    --borde-estanteria: #c4836d;
+    --selector-bg: #fff5f0;
+    --selector-borde: #e3c4b5;
+    --bg-main: #f3e8ff;
+    --card-bg: #ffffff;
+    --chip-bg: #faf5ff;
+    --border-color: #d8b4fe;
+    --text-main: #3b0764;
+    --text-muted: #7e22ce;
+    --accent-blue: #9333ea;
+    --btn-sec-bg: #f3e8ff;
+    --avatar-bg: #c084fc;
+    --avatar-text: #ffffff;
+}

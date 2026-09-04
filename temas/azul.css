@@ -1,0 +1,27 @@
+/* ==========================================================
+   TEMA AZUL (Variables Globales)
+   ========================================================== */
+:root {
+    --color-bg: #ebf8ff;
+    --color-card: #ffffff;
+    --color-borde: #bee3f8;
+    --color-texto: #2c5282;
+    --color-subtexto: #4299e1;
+    --color-primario: #3182ce;
+    --color-texto-primario: #ffffff;
+}
+
+body {
+    background-color: var(--color-bg) !important;
+    color: var(--color-texto) !important;
+}
+
+.perfil-card, .panel {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-borde);
+}
+
+.avatar-circle, .btn-primary, .tab-btn.active {
+    background-color: var(--color-primario);
+    color: var(--color-texto-primario);
+}

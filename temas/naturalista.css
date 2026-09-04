@@ -1,0 +1,75 @@
+body {
+    background: #f3f8f2;
+    color: #2f3e2f;
+    font-family: "Georgia", serif;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+    padding: 20px;
+}
+
+.panel {
+    background: #ffffff;
+    border: 2px solid #c8d9c0;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.panel-header h1, .panel-header h2 {
+    color: #5a7f5a;
+}
+
+.review-card {
+    background: #f7faf6;
+    border: 1px solid #c8d9c0;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+button {
+    background: #5a7f5a;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+button:hover {
+    background: #4a6a4a;
+}
+
+a {
+    color: #5a7f5a;
+    font-weight: bold;
+}
+
+.barra-progreso {
+    background: #c8d9c0;
+    height: 10px;
+    border-radius: 6px;
+}
+
+.barra-progreso-inner {
+    background: #5a7f5a;
+    height: 100%;
+}
+:root {
+    --bg-biblioteca: #1a2421;
+    --texto-biblioteca: #e8f0ec;
+    --madera-balda: linear-gradient(to bottom, #4a6652, #334a3a 40%, #213326);
+    --borde-estanteria: #273b2d;
+    --selector-bg: #273832;
+    --selector-borde: #3d544b;
+    --color-bg: #e8f5e9;           /* Fondo verde claro */
+    --color-card: #ffffff;         /* Tarjetas */
+    --color-borde: #c8e6c9;        /* Bordes */
+    --color-texto: #1b5e20;        /* Texto verde oscuro */
+    --color-subtexto: #388e3c;     /* Subtexto */
+    --color-primario: #2e7d32;     /* Botones principales */
+    --color-texto-primario: #ffffff;
+
+}

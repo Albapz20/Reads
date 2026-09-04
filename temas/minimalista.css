@@ -1,0 +1,67 @@
+body {
+    background: #f4f4f4;
+    color: #222;
+    font-family: system-ui, sans-serif;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+    padding: 20px;
+}
+
+.panel {
+    background: #ffffff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.panel-header h1, .panel-header h2 {
+    font-weight: 600;
+}
+
+.review-card {
+    background: #fafafa;
+    border: 1px solid #e5e5e5;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+button {
+    background: #333;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+button:hover {
+    opacity: 0.85;
+}
+
+a {
+    color: #333;
+    font-weight: 600;
+}
+
+.barra-progreso {
+    background: #ddd;
+    height: 10px;
+    border-radius: 6px;
+}
+
+.barra-progreso-inner {
+    background: #333;
+    height: 100%;
+}
+:root {
+    --bg-biblioteca: #f8f9fa;
+    --texto-biblioteca: #212529;
+    --madera-balda: linear-gradient(to bottom, #adb5bd, #868e96 40%, #495057);
+    --borde-estanteria: #6c757d;
+    --selector-bg: #ffffff;
+    --selector-borde: #ced4da;
+}
