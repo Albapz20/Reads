@@ -2,6 +2,8 @@
 require_once "../src/Auth.php";
 require_once "../src/Database.php";
 require_once "../src/UserService.php";
+require_once "../src/PortadaHelper.php";
+require_once __DIR__ . '/../src/helpers.php';
 
 $usuario = Auth::usuario();
 
@@ -20,10 +22,7 @@ $yearActual = (int)date("Y");
 $yearSeleccionado = isset($_GET['year']) ? (int)$_GET['year'] : $yearActual;
 $verTodo = isset($_GET['year']) && $_GET['year'] === 'todos';
 
-/* =========================================================
-   CONSULTA DE LIBROS
-   ========================================================= */
-
+/* Consulta de libros */
 if ($verTodo) {
     $sql = "
         SELECT id, titulo, portada, fecha_fin
@@ -64,10 +63,7 @@ if (!in_array($yearActual, $aniosDisponibles)) {
 function e($texto) {
     return htmlspecialchars($texto ?? '', ENT_QUOTES, 'UTF-8');
 }
-
-/* =========================================================
-   GENERAR BALDA (LIMPIA Y SIN DECORACIONES)
-   ========================================================= */
+//generar balda de libros
 function generarBalda($librosGrupo) {
     ?>
     <div class="balda-seccion">
@@ -75,35 +71,33 @@ function generarBalda($librosGrupo) {
             <div class="libros">
                 <?php foreach ($librosGrupo as $libro): 
                     $titulo = e($libro["titulo"]);
-                    $tienePortada = !empty($libro["portada"]) && filter_var($libro["portada"], FILTER_VALIDATE_URL);
+                    /// En tu bucle de renderizado de libros:
+                    $portadaSrc = obtenerPortadaValida($libro["portada"] ?? '', (int)$libro["id"]);
+                    $tienePortada = !empty($portadaSrc);
                 ?>
-                    <a href="detalle_libro.php?id=<?= (int)$libro["id"] ?>" 
-                       class="libro libro-portada" 
-                       title="<?= $titulo ?>">
-                        
-                        <div class="libro-cuerpo">
+                    <a href="detalle_libro.php?id=<?= (int)$libro["id"] ?>" class="libro libro-portada" title="<?= $titulo ?>">
+                        <div class="libro-cuerpo" style="position: relative; width: 100%; height: 100%; min-height: 180px; display: flex; align-items: center; justify-content: center;">
+                            
                             <?php if ($tienePortada): ?>
-                                <img src="<?= e($libro["portada"]) ?>" 
+                                <img src="<?= e($portadaSrc) ?>" 
                                      alt="<?= $titulo ?>" 
                                      class="imagen-portada" 
-                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" 
                                      loading="lazy">
-                                <div class="portada-fallback" style="display: none;">
-                                    <span><?= $titulo ?></span>
-                                </div>
-                            <?php else: ?>
-                                <div class="portada-fallback">
-                                    <span><?= $titulo ?></span>
-                                </div>
                             <?php endif; ?>
+
+                            <!-- Tarjeta CSS forzada: Si no hay portada ($tienePortada = false) se muestra SIEMPRE -->
+                            <div class="cubierta-generada" style="<?= $tienePortada ? 'display:none;' : 'display:flex;' ?> width: 100%; height: 100%; background: #1a233a; color: white; border-radius: 4px; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 8px; box-sizing: border-box;">
+                                <span class="titulo-cubierta" style="font-size: 11px; font-weight: bold; line-height: 1.2; overflow: hidden;"><?= $titulo ?></span>
+                                <span class="decoracion-cubierta" style="font-size: 14px; margin-top: 5px;">📖</span>
+                            </div>
+
                         </div>
                         <div class="sombra-libro"></div>
                     </a>
                 <?php endforeach; ?>
             </div>
         </div>
-
-        <!-- Estructura de la balda de madera -->
         <div class="balda-madera"></div>
     </div>
     <?php
@@ -134,6 +128,7 @@ function generarEstanteria($libros) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="main.js"></script>
 <title>Mi Biblioteca</title>
 
 <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
@@ -147,6 +142,36 @@ body {
     padding: 20px;
 }
 
+/* Cubierta simulada en CSS para libros sin foto */
+.cubierta-generada {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 8px;
+    box-sizing: border-box;
+    text-align: center;
+    border-left: 4px solid rgba(255, 255, 255, 0.2);
+}
+
+.titulo-cubierta {
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1.3;
+    font-family: sans-serif;
+    word-break: break-word;
+    margin-top: 10px;
+}
+
+.decoracion-cubierta {
+    font-size: 20px;
+    opacity: 0.8;
+    margin-bottom: 10px;
+}
 .biblioteca-wrapper {
     width: 100%;
     max-width: 950px;
@@ -247,26 +272,6 @@ body {
     display: block;
 }
 
-/* Cubierta alternativa elegante para libros sin portada o imagen rota */
-.portada-fallback {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #2c3e50, #4ca1af);
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-    box-sizing: border-box;
-    text-align: center;
-    font-family: 'Georgia', serif;
-    font-size: 13px;
-    font-weight: bold;
-    line-height: 1.3;
-    border: 1px solid rgba(255,255,255,0.2);
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
-}
-
 .libro-portada:hover {
     transform: translateY(-8px) scale(1.04);
     z-index: 20;
@@ -322,7 +327,7 @@ body {
 
 <div class="biblioteca-wrapper">
 
-    <!-- CABECERA CON FILTRO DE AÑO -->
+    <!-- Filtro de año -->
     <div class="biblioteca-header">
         <h2>📚 Estantería <?= $verTodo ? 'Histórica' : $yearSeleccionado ?></h2>
 
@@ -340,7 +345,7 @@ body {
         </div>
     </div>
 
-    <!-- ESTANTERÍA -->
+    <!-- Estantería -->
     <div class="estanteria">
         <?php generarEstanteria($libros); ?>
     </div>

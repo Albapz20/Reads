@@ -2,7 +2,7 @@
 require_once "../src/UserService.php";
 require_once "../src/Auth.php";
 
-// En recuperación NO hay usuario todavía → tema por defecto
+
 $tema = "pastel";
 
 $service = new UserService();

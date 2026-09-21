@@ -19,7 +19,7 @@ if (!$libro_id) {
     exit;
 }
 
-// 1. Obtener datos actuales del registro
+// Obtener datos actuales del registro
 $sql = "SELECT id, libro_id, titulo, autores, estado, paginas_totales, paginas_leidas 
         FROM listas_lectura 
         WHERE id = ? AND usuario_id = ?";
@@ -35,9 +35,7 @@ $paginas_totales = (int)($libro["paginas_totales"] ?? 0);
 $paginas_leidas  = isset($_POST["paginas_leidas"]) ? (int)$_POST["paginas_leidas"] : (int)$libro["paginas_leidas"];
 $estado          = $_POST["estado"] ?? $libro["estado"];
 
-/**
- * Función auxiliar para buscar páginas en Open Library (API gratuita y pública)
- */
+// Función auxiliar para buscar páginas en Open Library
 function buscarPaginasEnOpenLibrary($titulo, $autor) {
     $query = urlencode($titulo . " " . $autor);
     $url = "https://openlibrary.org/search.json?q=" . $query;
@@ -67,7 +65,7 @@ function buscarPaginasEnOpenLibrary($titulo, $autor) {
     return 0;
 }
 
-// 2. RECUPERACIÓN AUTOMÁTICA
+// Recuperación de páginas totales si no están definidas
 if ($paginas_totales === 0) {
     // Intento 1: Consultar Open Library por Título + Autor
     $paginas_totales = buscarPaginasEnOpenLibrary($libro["titulo"], $libro["autores"] ?? "");
@@ -84,12 +82,12 @@ if ($paginas_totales === 0) {
     }
 }
 
-// 3. Si el libro está en estado "leído", igualamos automáticamente las leídas a las totales
+// Si el libro está en estado "leído", igualamos automáticamente las leídas a las totales
 if ($estado === "leido") {
     $paginas_leidas = $paginas_totales;
 }
 
-// 4. Guardar en BD
+//s Guardar en BD
 $listaService->actualizarPaginas(
     $usuario["id"],
     $libro_id,

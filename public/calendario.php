@@ -11,7 +11,7 @@ $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
 $db = new Database();
 
-// --- 1. PROCESAR GUARDADO DE SESIÓN DIARIA ---
+// Procesar el registro de lectura diaria
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'guardar_progreso_diario') {
     $idLista = (int)$_POST['id_lista'];
     $fecha = $_POST['fecha_registro'];
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     exit;
 }
 
-// --- 2. ELIMINAR ANOTACIÓN DIARIA ---
+// Eliminar un registro diario
 if (isset($_GET['eliminar_diario'])) {
     $idDiario = (int)$_GET['eliminar_diario'];
     
@@ -52,7 +52,7 @@ if (isset($_GET['eliminar_diario'])) {
     exit;
 }
 
-// --- 3. PROCESAR LANZAMIENTO FUTURO ---
+// Procesar nuevo lanzamiento futuro
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'nuevo_lanzamiento') {
     $titulo = trim($_POST['titulo'] ?? '');
     $autor = trim($_POST['autor'] ?? '');
@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     exit;
 }
 
-// --- 4. ELIMINAR LANZAMIENTO ---
+// Eliminar un lanzamiento futuro
 if (isset($_GET['eliminar_lanzamiento'])) {
     $idEliminar = (int)$_GET['eliminar_lanzamiento'];
     $sqlDelete = "DELETE FROM lanzamientos_deseados WHERE id = ? AND usuario_id = ?";
@@ -81,7 +81,7 @@ if (isset($_GET['eliminar_lanzamiento'])) {
     exit;
 }
 
-// --- 5. CONTROL DE FECHAS Y NAVEGACIÓN ---
+// Control de mes y año para mostrar en el calendario
 $mesActual = isset($_GET['mes']) ? (int)$_GET['mes'] : (int)date('m');
 $yearActual = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
 if ($mesActual < 1) { $mesActual = 12; $yearActual--; }
@@ -90,7 +90,7 @@ if ($mesActual > 12) { $mesActual = 1; $yearActual++; }
 $primerDiaMes = "$yearActual-" . str_pad($mesActual, 2, '0', STR_PAD_LEFT) . "-01";
 $ultimoDiaMes = date("Y-m-t", strtotime($primerDiaMes));
 
-// --- 6. OBTENER LIBROS EN CURSO (ESTADO: 'leyendo') ---
+// Obtener la lista de libros que el usuario está leyendo actualmente
 $sqlMisLibros = "SELECT id, titulo, paginas_totales, paginas_leidas 
                  FROM listas_lectura 
                  WHERE usuario_id = ? AND estado = 'leyendo'";
@@ -98,10 +98,9 @@ $stmtMisLibros = $db->pdo->prepare($sqlMisLibros);
 $stmtMisLibros->execute([$usuario['id']]);
 $misLibrosLeyendo = $stmtMisLibros->fetchAll(PDO::FETCH_ASSOC);
 
-// --- 7. CONSULTAR REGISTROS DE LECTURA Y EVENTOS DEL MES ---
 $eventosPorDia = [];
 
-// A) Avances diarios (Anotaciones manuales de lectura)
+// Avances diarios (Anotaciones manuales de lectura)
 $sqlDiario = "SELECT d.id as diario_id, d.fecha, d.paginas_leidas, l.titulo, l.portada, l.id as lista_id
               FROM diario_lectura d
               INNER JOIN listas_lectura l ON d.libro_id = l.id
@@ -114,7 +113,7 @@ foreach ($stmtDiario->fetchAll(PDO::FETCH_ASSOC) as $reg) {
     $eventosPorDia[$dia][] = $reg;
 }
 
-// B) Fechas automáticas de inicio y fin de libro
+// Fechas automáticas de inicio y fin de libro
 $sqlHitos = "SELECT id, titulo, portada, fecha_inicio, fecha_fin 
              FROM listas_lectura 
              WHERE usuario_id = ? 
@@ -140,7 +139,7 @@ foreach ($stmtHitos->fetchAll(PDO::FETCH_ASSOC) as $hito) {
     }
 }
 
-// C) Lanzamientos futuros
+// Lanzamientos futuros
 $sqlLanz = "SELECT id, titulo, portada, fecha_lanzamiento 
             FROM lanzamientos_deseados 
             WHERE usuario_id = ? AND fecha_lanzamiento BETWEEN ? AND ?";
@@ -162,6 +161,7 @@ $mesesEs = [1=>'Enero', 2=>'Febrero', 3=>'Marzo', 4=>'Abril', 5=>'Mayo', 6=>'Jun
     <meta charset="UTF-8">
     <title>Calendario de Lectura</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+    <script src="main.js"></script>
     <style>
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
         .day-name { text-align: center; font-weight: bold; padding: 8px 0; opacity: 0.7; }
@@ -233,7 +233,7 @@ $mesesEs = [1=>'Enero', 2=>'Febrero', 3=>'Marzo', 4=>'Abril', 5=>'Mayo', 6=>'Jun
     <h1>📅 Calendario de Lectura</h1>
     <p>Haz clic en cualquier casilla del día para anotar las páginas leídas de tus libros activos.</p>
 
-    <!-- FORMULARIO LANZAMIENTOS -->
+    <!-- Lanzamientos futuros -->
     <details class="form-lanzamiento">
         <summary style="font-weight: bold; cursor: pointer;">
             🚀 Recordar la fecha de lanzamiento de un libro futuro
@@ -252,14 +252,14 @@ $mesesEs = [1=>'Enero', 2=>'Febrero', 3=>'Marzo', 4=>'Abril', 5=>'Mayo', 6=>'Jun
         </form>
     </details>
 
-    <!-- NAVEGACIÓN -->
+    <!-- Navegación -->
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
         <a href="?mes=<?= $mesActual-1 ?>&year=<?= $yearActual ?>" class="btn">← Anterior</a>
         <h2><?= $mesesEs[$mesActual] ?> <?= $yearActual ?></h2>
         <a href="?mes=<?= $mesActual+1 ?>&year=<?= $yearActual ?>" class="btn">Siguiente →</a>
     </div>
 
-    <!-- REJILLA -->
+    <!-- Rejilla del calendario -->
     <div class="calendar-grid">
         <div class="day-name">Lun</div><div class="day-name">Mar</div><div class="day-name">Mié</div>
         <div class="day-name">Jue</div><div class="day-name">Vie</div><div class="day-name">Sáb</div><div class="day-name">Dom</div>
@@ -315,7 +315,7 @@ $mesesEs = [1=>'Enero', 2=>'Febrero', 3=>'Marzo', 4=>'Abril', 5=>'Mayo', 6=>'Jun
     </div>
 </div>
 
-<!-- MODAL PARA INGRESAR LECTURA DIARIA -->
+<!-- Formulario para anotar lectura diaria -->
 <div id="modalLectura" class="modal" onclick="cerrarModal();">
     <div class="modal-content" onclick="event.stopPropagation();">
         <h3 style="margin-top:0;">Anotar Lectura</h3>

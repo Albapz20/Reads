@@ -33,9 +33,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $estrellas = $_POST["estrellas"];
     $paginas_leidas = (int)$_POST["paginas_leidas"];
 
-    // ============================
-    // ACTUALIZAR PÁGINAS TOTALES AUTOMÁTICAS
-    // ============================
+    // Actualizar páginas totales y portada si el título cambia
 
     if ($titulo !== $libro["titulo"]) {
 
@@ -55,9 +53,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $paginas_totales = $libro["paginas_totales"];
     }
 
-    // ============================
-    // AJUSTAR PÁGINAS LEÍDAS SEGÚN ESTADO
-    // ============================
+    // Ajustar páginas leídas según el estado del libro
 
     if ($estado === "leido") {
         $paginas_leidas = $paginas_totales;
@@ -67,19 +63,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $paginas_leidas = 0;
     }
 
-    // ============================
-    // CALCULAR PROGRESO AUTOMÁTICO
-    // ============================
+    // Calcular progreso automáticamente
 
     $progreso = 0;
     if ($paginas_totales > 0) {
         $progreso = round(($paginas_leidas / $paginas_totales) * 100);
     }
 
-    // ============================
-    // GUARDAR CAMBIOS
-    // ============================
-
+    // Guardar cambios en la base de datos
     $sql = "UPDATE listas_lectura 
             SET titulo=?, estado=?, fecha_fin=?, estrellas=?, paginas_leidas=?, paginas_totales=?, progreso=?, portada=?
             WHERE id=? AND usuario_id=?";

@@ -114,7 +114,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
                 </div>
             </div>
 
-            <!-- TIENDAS DE COMPRA (WISHLIST) -->
+            <!-- Tiendas de compra (Wishlist) -->
             <?php if ($esListaDeseos): ?>
                 <div class="seccion-secundaria-item">
                     <p style="margin: 0 0 8px 0; font-size: 0.85rem; font-weight: 700;">🛒 Opciones para comprar o regalar:</p>
@@ -125,7 +125,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
                     </div>
                 </div>
             <?php else: ?>
-                <!-- PROGRESO DE LECTURA -->
+                <!-- Progreso de lectura -->
                 <div class="seccion-secundaria-item">
                     <p style="margin: 0 0 5px 0;"><strong>Progreso:</strong> <?= $progreso ?>%</p>
 
@@ -144,7 +144,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
                 </div>
             <?php endif; ?>
 
-            <!-- FECHAS DE LECTURA -->
+            <!-- Fechas de lectura -->
             <?php if ($libro["estado"] === "leyendo" || $libro["estado"] === "leido"): ?>
                 <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color, rgba(128,128,128,0.3));">
                     <form action="actualizar_fechas.php" method="POST" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
@@ -165,7 +165,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
                 </div>
             <?php endif; ?>
 
-            <!-- VALORACIÓN COMPLETA -->
+            <!-- Valoración -->
             <?php if ($libro["estado"] === "leido" || $libro["estado"] === "abandonado"): ?>
                 <div class="seccion-secundaria-item">
                     <form method="POST" action="actualizar_estrellas.php" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
@@ -269,6 +269,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <script src="main.js"></script>
     <title>Mi perfil</title>
 <style>
     body {
@@ -602,7 +603,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
 
 <div class="container">
 
-    <!-- BANNER DE PERFIL -->
+    <!-- Banner de perfil -->
     <div class="perfil-card perfil-banner-container">
         <div class="perfil-header-main">
             <div class="avatar-circle">
@@ -627,19 +628,19 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         </div>
     </div>
 
-    <!-- MIS LISTAS DE LECTURA CON WISHLIST DESTACADA -->
+    <!-- Mis listas de lectura -->
     <div class="perfil-card perfil-listas-card">
         
         <div class="perfil-card-header">
             <h2 class="perfil-card-titulo">📚 Mis lecturas</h2>
 
-            <!-- BOTÓN WISHLIST DESTACADO -->
+            <!-- Botón Wishlist destacado -->
             <button class="wishlist-btn-destacado" onclick="openTab(event, 'guardados')">
                 🎁 Wishlist <span class="wishlist-count"><?= count($guardados) ?></span>
             </button>
         </div>
 
-        <!-- 4 PESTAÑAS DE SEGUIMIENTO -->
+        <!-- Pestañas de seguimiento -->
         <div class="tabs-listas">
             <button class="tab-btn active" onclick="openTab(event, 'tbr')">
                 🎯 TBR <span class="tab-count"><?= count($tbr) ?></span>
@@ -675,7 +676,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
             <?php renderizarContenidoLista($abandonados, false); ?>
         </div>
 
-        <!-- CONTENIDO WISHLIST -->
+        <!-- Contenido de la lista de guardados -->
         <div id="lista-guardados" class="tab-content">
             <div class="share-card-box">
                 <img src="<?= $urlQR ?>" alt="Código QR Wishlist" class="qr-img">
@@ -700,7 +701,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
 
 </div>
 
-<!-- NAVEGACIÓN FLOTANTE -->
+<!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
         <a href="index.php" class="nav-card-float">

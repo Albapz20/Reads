@@ -11,7 +11,7 @@ if (!$usuario) {
 $db = new Database();
 
 // Recoger datos del formulario
-$id        = $_POST["libro_id"];   // ← ESTE ES EL ID REAL DEL REGISTRO
+$id        = $_POST["libro_id"]; 
 $estrellas = $_POST["estrellas"];
 
 // Guardar en la base de datos

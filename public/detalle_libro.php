@@ -3,8 +3,9 @@
 require_once "../src/Auth.php";
 require_once "../src/UserService.php";
 require_once "../src/ListaService.php";
+require_once __DIR__ . '/../src/helpers.php';
 
-// 1. Validar Sesión
+// Validar Sesión
 $usuario = Auth::usuario();
 if (!$usuario) {
     header("Location: login.php");
@@ -18,14 +19,14 @@ $listaService = new ListaService();
 $datosUsuario = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datosUsuario["tema_visual"] ?? "pastel";
 
-// 2. Obtener ID del libro desde el parámetro GET
+// Obtener ID del libro desde el parámetro GET
 $id_param = $_GET['id'] ?? null;
 if (!$id_param) {
     header("Location: biblioteca.php");
     exit;
 }
 
-// 3. Buscar la información completa del libro en las listas del usuario
+// Buscar la información completa del libro en las listas del usuario
 $todasLasListas = array_merge(
     $listaService->obtenerLista($usuario["id"], "guardado") ?? [],
     $listaService->obtenerLista($usuario["id"], "leyendo") ?? [],
@@ -48,7 +49,7 @@ if (!$libro) {
     exit;
 }
 
-// 4. Cálculos de Progreso y Auto-recuperación de Páginas
+// Cálculos de Progreso y Auto-recuperación de Páginas
 $paginasTotales = (int)($libro["paginas_totales"] ?? 0);
 $paginasLeidas  = (int)($libro["paginas_leidas"] ?? 0);
 
@@ -81,11 +82,13 @@ $progreso = $paginasTotales > 0
     ? round(($paginasLeidas / $paginasTotales) * 100)
     : (int)($libro["progreso"] ?? 0);
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="main.js"></script>
     <title><?= htmlspecialchars($libro["titulo"]) ?> - Reads</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
     <style>
@@ -210,7 +213,7 @@ $progreso = $paginasTotales > 0
 
 <div class="contenedor-ficha">
 
-    <!-- CABECERA DEL LIBRO -->
+    <!-- Cabecera del libro -->
     <div class="libro-header">
         <img src="<?= htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg') ?>" class="libro-portada" alt="Portada">
 
@@ -218,7 +221,7 @@ $progreso = $paginasTotales > 0
             <h2 class="libro-titulo"><?= htmlspecialchars($libro["titulo"]) ?></h2>
             <p><strong>Autor:</strong> <?= htmlspecialchars($libro["autores"] ?? 'Desconocido') ?></p>
             
-            <!-- CAMBIAR ESTADO Y ELIMINAR -->
+            <!-- Acciones de perfil: cambiar estado y eliminar libro -->
             <div class="acciones-perfil">
                 <form method="POST" action="cambiar_estado.php" class="inline-form">
                     <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
@@ -239,12 +242,12 @@ $progreso = $paginasTotales > 0
         </div>
     </div>
 
-<!-- TARJETA DE PROGRESO -->
+<!-- Tarjeta de progreso -->
 <div class="panel-seccion">
     <h3>Progreso de lectura</h3>
     <p><strong>Progreso actual:</strong> <?= $progreso ?>%</p>
 
-    <!-- FORMULARIO DE PÁGINAS LEÍDAS -->
+    <!-- Formulario de actualización de páginas leídas -->
     <form method="POST" action="actualizar_paginas.php" class="campo-grupo">
         <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
 
@@ -263,12 +266,12 @@ $progreso = $paginasTotales > 0
     </div>
 </div>
 
-    <!-- VALORACIÓN, RESEÑA Y MOTIVO (LEÍDO O ABANDONADO) -->
+    <!-- Valoración y opinión -->
     <?php if ($libro["estado"] === "leido" || $libro["estado"] === "abandonado"): ?>
         <div class="panel-seccion">
             <h3>Tu valoración y opinión</h3>
 
-            <!-- VALORACIÓN EN ESTRELLAS -->
+            <!-- Valoración en estrellas -->
             <form method="POST" action="actualizar_estrellas.php" class="campo-grupo">
                 <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
                 <label for="estrellas">Valoración:</label>
@@ -284,7 +287,7 @@ $progreso = $paginasTotales > 0
                 </div>
             </form>
 
-            <!-- RESEÑA PERSONAL (Usa la columna real 'reseña_personal') -->
+            <!-- Reseña personal -->
             <form method="POST" action="actualizar_reseña.php" class="campo-grupo">
                 <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
                 <label for="reseñas">Reseña:</label>
@@ -292,12 +295,12 @@ $progreso = $paginasTotales > 0
                 <button type="submit" style="margin-top: 8px;">Guardar reseña</button>
             </form>
 
-            <!-- FECHA DE FINALIZACIÓN -->
+            <!-- Fecha de finalización -->
             <?php if ($libro["estado"] === "leido"): ?>
                 <p><strong>Fecha de finalización:</strong> <?= htmlspecialchars($libro["fecha_fin"] ?? 'No registrada') ?></p>
             <?php endif; ?>
 
-            <!-- MOTIVO DE ABANDONO -->
+            <!-- Motivo de abandono -->
             <?php if ($libro["estado"] === "abandonado"): ?>
                 <form method="POST" action="actualizar_progreso.php" class="campo-grupo">
                     <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">

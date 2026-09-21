@@ -6,17 +6,13 @@ class PortadasService
     {
         $titulo = trim($titulo);
 
-        // ===============================
-        // 1) BÚSQUEDA EXACTA POR TÍTULO
-        // ===============================
+        // Buscar primero por título completo
         $datos = self::buscarGoogleBooks("intitle:" . $titulo);
         if (self::validarDatos($datos)) {
             return self::extraerDatos($datos);
         }
 
-        // ===============================
-        // 2) BÚSQUEDA POR AUTOR (si existe)
-        // ===============================
+        // Buscar por autor si se proporciona
         if (!empty($autor)) {
             $datos = self::buscarGoogleBooks("inauthor:" . $autor);
             if (self::validarDatos($datos)) {
@@ -24,18 +20,14 @@ class PortadasService
             }
         }
 
-        // ===============================
-        // 3) BÚSQUEDA PARCIAL (primera palabra)
-        // ===============================
+        // Buscar por la primera palabra del título como último recurso
         $primeraPalabra = explode(" ", $titulo)[0];
         $datos = self::buscarGoogleBooks($primeraPalabra);
         if (self::validarDatos($datos)) {
             return self::extraerDatos($datos);
         }
 
-        // ===============================
-        // 4) NO ENCONTRADO → devolver valores seguros
-        // ===============================
+        // No se encontraron datos válidos, devolver valores por defecto
         return [
             "paginas_totales" => 0,
             "portada" => null
@@ -44,7 +36,6 @@ class PortadasService
 
     private static function buscarGoogleBooks($query)
     {
-        // 🔥 PEGA AQUÍ TU API KEY 🔥
         $apiKey = "AIzaSyBWAS9W-oky5pAt-GlDDSUCv5KEraFA7qI";
 
         $query = urlencode($query);

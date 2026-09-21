@@ -1,20 +1,40 @@
 <?php
 // src/CorreoService.php
 
+// Se comprobará si los archivos de PHPMailer existen antes de intentar cargarlos
+$phpmailerDir = __DIR__ . '/PHPMailer/';
+
+if (
+    file_exists($phpmailerDir . 'Exception.php') &&
+    file_exists($phpmailerDir . 'PHPMailer.php') &&
+    file_exists($phpmailerDir . 'SMTP.php')
+) {
+    require_once $phpmailerDir . 'Exception.php';
+    require_once $phpmailerDir . 'PHPMailer.php';
+    require_once $phpmailerDir . 'SMTP.php';
+} elseif (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    // Soporte alternativo si usaste Composer
+    require_once __DIR__ . '/../vendor/autoload.php';
+}
+
+// Importar las clases necesarias de PHPMailer
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-require_once __DIR__ . '/PHPMailer/Exception.php';
-require_once __DIR__ . '/PHPMailer/PHPMailer.php';
-require_once __DIR__ . '/PHPMailer/SMTP.php';
-
 class CorreoService {
-    private $host = 'smtp.gmail.com'; // Servidor SMTP (ej. Gmail o el de tu hosting)
+    private $host = 'smtp.gmail.com'; 
     private $port = 587;
-    private $username = 'albaperezcc64@gmail.com'; // 👈 Tu correo donde recibirás los mensajes
-    private $password = 'tu_contraseña_de_aplicacion'; // 👈 Tu contraseña de aplicación de 16 caracteres
+    private $username = 'albaperezcc64@gmail.com'; 
+    private $password = 'tu_contraseña_de_aplicacion'; // Recuerda generar esta clave desde tu cuenta Google
 
     public function enviarContacto($emailUsuario, $nombreUsuario, $asunto, $mensajeContacto) {
+        
+        // Evitar que la web colapse si faltan los archivos de PHPMailer
+        if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+            error_log("PHPMailer no está disponible. Comprueba la carpeta src/PHPMailer/");
+            return false;
+        }
+
         $mail = new PHPMailer(true);
 
         try {
@@ -30,8 +50,8 @@ class CorreoService {
 
             // Destinatarios y remitente
             $mail->setFrom($this->username, 'Reads App Soporte');
-            $mail->addAddress($this->username); // Te llega a ti como administrador
-            $mail->addReplyTo($emailUsuario, $nombreUsuario); // Para responder directamente al usuario
+            $mail->addAddress($this->username); 
+            $mail->addReplyTo($emailUsuario, $nombreUsuario); 
 
             // Contenido del correo
             $mail->isHTML(true);
@@ -39,8 +59,8 @@ class CorreoService {
             
             $mail->Body = "
                 <h2>Nuevo mensaje de contacto en Reads</h2>
-                <p><strong>Usuario:</strong> {$nombreUsuario} ({$emailUsuario})</p>
-                <p><strong>Asunto:</strong> {$asunto}</p>
+                <p><strong>Usuario:</strong> " . htmlspecialchars($nombreUsuario) . " (" . htmlspecialchars($emailUsuario) . ")</p>
+                <p><strong>Asunto:</strong> " . htmlspecialchars($asunto) . "</p>
                 <hr>
                 <p><strong>Mensaje:</strong></p>
                 <p>" . nl2br(htmlspecialchars($mensajeContacto)) . "</p>
@@ -49,7 +69,7 @@ class CorreoService {
             $mail->send();
             return true;
         } catch (Exception $e) {
-            // Se puede registrar el error en un archivo log si fuera necesario
+            error_log("Error al enviar correo: " . $mail->ErrorInfo);
             return false;
         }
     }

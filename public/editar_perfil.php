@@ -18,7 +18,7 @@ $tema  = $datos["tema_visual"] ?? "pastel";
 $mensajePerfil = "";
 $mensajeTema   = "";
 
-// 1. PROCESAR GUARDADO DE DATOS PERSONALES
+// Procesar formulario de edición de perfil
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_perfil"])) {
     $nombre     = trim($_POST["nombre"]);
     $email      = trim($_POST["email"]);
@@ -39,7 +39,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_perfil"])) {
     }
 }
 
-// 2. PROCESAR GUARDADO DE TEMA VISUAL
+// Procesar formulario de cambio de tema visual
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
     $tema_visual = $_POST["tema_visual"];
 
@@ -67,7 +67,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
 
 <div class="container">
 
-    <!-- PANEL 1: DATOS DE PERFIL -->
+    <!-- Datos del perfil -->
     <div class="panel">
         <div class="panel-header">
             <h1>Editar perfil</h1>
@@ -96,7 +96,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
         </form>
     </div>
 
-    <!-- PANEL 2: ESTILO VISUAL -->
+    <!-- Panel de selección de tema visual -->
     <div class="panel">
         <div class="panel-header">
             <h2>Estilo visual</h2>

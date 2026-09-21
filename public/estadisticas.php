@@ -11,9 +11,7 @@ $db = new Database();
 $ajustesService = new AjustesService();
 $userService    = new UserService();
 
-/* -------------------------
-   PROCESAR ACTUALIZACIÓN DE OBJETIVO ANUAL
--------------------------- */
+// Procesar formulario de actualización del objetivo anual
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["nuevo_objetivo"])) {
     $nuevoObjetivo = max(1, (int)$_POST["nuevo_objetivo"]);
     
@@ -34,9 +32,7 @@ $year = date("Y");
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
 
-/* -------------------------
-   LIBROS LEÍDOS POR MES (12 MESES)
--------------------------- */
+// Obtener la distribución de libros leídos por mes para el año actual
 $sqlMeses = "SELECT MONTH(fecha_fin) AS mes, COUNT(*) AS total
              FROM listas_lectura
              WHERE usuario_id = ? AND estado = 'leido'
@@ -56,9 +52,7 @@ for ($i = 1; $i <= 12; $i++) {
     $mesesValores[] = isset($mesesData[$i]) ? (int)$mesesData[$i] : 0;
 }
 
-/* -------------------------
-   TOTAL LEÍDOS ESTE AÑO
--------------------------- */
+// Obtener el total de libros leídos en el año actual
 $sqlLeidos = "SELECT COUNT(*) FROM listas_lectura
               WHERE usuario_id = ? AND estado = 'leido'
               AND YEAR(fecha_fin) = ?";
@@ -67,15 +61,11 @@ $stmt = $db->pdo->prepare($sqlLeidos);
 $stmt->execute([$usuario["id"], $year]);
 $leidosEsteAño = (int)$stmt->fetchColumn();
 
-/* -------------------------
-   OBJETIVO ANUAL
--------------------------- */
+// Calcular el porcentaje del objetivo anual
 $objetivo = (int)($ajustes["objetivo_anual"] ?? 0);
 $porcentajeObjetivo = $objetivo > 0 ? round(($leidosEsteAño / $objetivo) * 100) : 0;
 
-/* -------------------------
-   TIEMPO LEYENDO EN EL AÑO (DÍAS Y MINUTOS)
--------------------------- */
+// Calcular el tiempo total de lectura en minutos para el año actual
 $sqlTiempo = "SELECT 
                 COALESCE(SUM(paginas_totales), 0) AS total_paginas
               FROM listas_lectura
@@ -95,9 +85,7 @@ $minutosRestantesDias = $totalMinutosLectura % 1440;
 $horasLectura = floor($minutosRestantesDias / 60);
 $minutosLecturaFinal = $minutosRestantesDias % 60;
 
-/* -------------------------
-   TOP 5 LIBROS POR PÁGINAS
--------------------------- */
+// Obtener el top 5 de libros con más páginas leídas
 $sqlPaginas = "SELECT titulo, paginas_totales, portada
                FROM listas_lectura
                WHERE usuario_id = ? AND estado = 'leido'
@@ -109,9 +97,7 @@ $stmt->execute([$usuario["id"]]);
 $topPaginas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $topValores = array_map("intval", array_column($topPaginas, "paginas_totales"));
 
-/* -------------------------
-   ESTADÍSTICAS DE ESTRELLAS
--------------------------- */
+// Obtener la distribución de estrellas para los libros leídos
 $sqlEstrellas = "SELECT estrellas FROM listas_lectura
                  WHERE usuario_id = ? AND estado = 'leido'";
 
@@ -158,6 +144,7 @@ if (!empty($estrellasLista)) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="main.js"></script>
 <title>Estadísticas de lectura</title>
 
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
@@ -183,7 +170,6 @@ if (!empty($estrellasLista)) {
     font-size: 1.25rem;
 }
 
-/* OBJETIVO ANUAL */
 .objetivo-card-wrapper {
     display: flex;
     flex-direction: column;
@@ -222,7 +208,6 @@ if (!empty($estrellasLista)) {
     font-weight: 600;
 }
 
-/* BOTÓN Y FORMULARIO DE RETO */
 .btn-reto {
     margin-top: 15px;
     background: #e9ecef;
@@ -276,7 +261,6 @@ if (!empty($estrellasLista)) {
     font-weight: bold;
 }
 
-/* TIEMPO LEYENDO */
 .tiempo-grid {
     display: flex;
     gap: 15px;
@@ -304,7 +288,6 @@ if (!empty($estrellasLista)) {
     font-weight: 600;
 }
 
-/* CONTENEDORES DE GRÁFICOS */
 .grafico-contenedor-barras {
     width: 100%;
     max-width: 500px;
@@ -313,7 +296,6 @@ if (!empty($estrellasLista)) {
     position: relative;
 }
 
-/* RANKING TOP 5 */
 .ranking-lista {
     display: flex;
     flex-direction: column;
@@ -432,7 +414,7 @@ if (!empty($estrellasLista)) {
 
 <div class="container">
 
-    <!-- OBJETIVO ANUAL -->
+    <!-- Objetivo anual -->
     <div class="panel">
         <div class="panel-header">
             <h2>📘 Objetivo anual</h2>
@@ -447,7 +429,7 @@ if (!empty($estrellasLista)) {
                 </div>
             </div>
 
-            <!-- BOTÓN ESTABLECER RETO -->
+            <!-- Botón Establecer Reto -->
             <button class="btn-reto" onclick="toggleFormReto()">🎯 Establecer reto de lectura</button>
 
             <div class="form-reto-wrapper" id="formRetoWrapper">
@@ -459,7 +441,7 @@ if (!empty($estrellasLista)) {
         </div>
     </div>
 
-    <!-- LIBROS POR MES (BARRAS VERTICALES TRADICIONALES) -->
+    <!-- Libros leídos por mes -->
     <div class="panel">
         <div class="panel-header">
             <h2>📅 Libros leídos por mes</h2>
@@ -470,7 +452,7 @@ if (!empty($estrellasLista)) {
         </div>
     </div>
 
-    <!-- TOP 5 PÁGINAS -->
+    <!-- TOP 5 páginas -->
     <div class="panel">
         <div class="panel-header">
             <h2>📚 Top 5 libros por páginas</h2>
@@ -508,7 +490,7 @@ if (!empty($estrellasLista)) {
         </div>
     </div>
 
-    <!-- ESTRELLAS -->
+    <!-- Estrellas -->
     <div class="panel">
         <div class="panel-header">
             <h2>⭐ Distribución por Estrellas</h2>
@@ -533,7 +515,7 @@ if (!empty($estrellasLista)) {
         </div>
     </div>
 
-    <!-- TIEMPO LEYENDO EN EL AÑO -->
+    <!-- Tiempo leyendo en el año -->
     <div class="panel">
         <div class="panel-header">
             <h2>⏱️ Tiempo leyendo en <?= $year ?></h2>
@@ -619,7 +601,7 @@ const colorTexto = getComputedStyle(document.documentElement).getPropertyValue('
 document.querySelectorAll('.theme-color-text').forEach(el => el.style.color = colorTema);
 document.querySelectorAll('.theme-color-bg').forEach(el => el.style.backgroundColor = colorTema);
 
-// 1. OBJETIVO ANUAL
+// Objetivo anual 
 new Chart(document.getElementById("objetivoChart"), {
     type: "doughnut",
     data: {
@@ -641,7 +623,7 @@ new Chart(document.getElementById("objetivoChart"), {
     }
 });
 
-// 2. LIBROS LEÍDOS POR MES (LÍNEA CON DEGRADADO DEL TEMA)
+// Libros leídos por mes
 const ctxMeses = document.getElementById("mesesChart").getContext("2d");
 
 const gradient = ctxMeses.createLinearGradient(0, 0, 0, 200);
@@ -694,7 +676,7 @@ new Chart(ctxMeses, {
     }
 });
 
-// 3. DISTRIBUCIÓN POR ESTRELLAS
+// Distribución por estrellas
 new Chart(document.getElementById("estrellasChart"), {
     type: "bar",
     data: {

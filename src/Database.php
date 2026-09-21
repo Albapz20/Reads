@@ -26,9 +26,7 @@ class Database {
         }
     }
 
-    /* ---------------------------------------------------------
-       FUNCIONES BÁSICAS PARA INSERTAR Y CONSULTAR LIBROS
-       --------------------------------------------------------- */
+    /* Funciones para actualizar y guardar libros */
         public function actualizarDescripcionLibro($id_externo, $descripcion) {
             $sql = "UPDATE libros SET descripcion = ? WHERE id_externo = ?";
             $stmt = $this->pdo->prepare($sql);

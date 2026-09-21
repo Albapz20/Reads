@@ -2,9 +2,7 @@
 
 class BookService {
 
-    // ============================
-    // BUSCAR LIBROS
-    // ============================
+    // Buscar libros por título o autor usando Google Books y Open Library
     public function buscarLibros($query) {
 
         $queryUrl = urlencode($query);
@@ -70,9 +68,7 @@ class BookService {
         return [];
     }
 
- // ============================
-    // OBTENER LIBRO CON API KEY
-    // ============================
+ // Obtener detalles de un libro por API Key
     public function obtenerLibro($id) {
 
         // 🔑 API Key configurada
@@ -148,9 +144,7 @@ class BookService {
 
         return null;
     }
-    // ============================
-    // HELPER CURL / HTTP
-    // ============================
+    // Hacer petición GET con cURL y decodificar JSON
     private function curlGet($url) {
         $curl = curl_init();
         curl_setopt_array($curl, [

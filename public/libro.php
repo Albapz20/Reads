@@ -47,9 +47,7 @@ if (!$libroAPI) die("No se pudo obtener información del libro.");
 $paginasTotalesAPI = 0;
 $proveedor = "google_books";
 
-// ==========================================
-// TRATAMIENTO UNIFICADO DE DATOS Y PORTADA
-// ==========================================
+// Tratamiento de datos según la fuente (Google Books o Open Library)
 if (isset($libroAPI["volumeInfo"])) {
     // ---- GOOGLE BOOKS DIRECTO ----
     $info = $libroAPI["volumeInfo"];
@@ -101,9 +99,7 @@ if (!empty($descripcionURL)) {
     $descripcion = $descripcionURL;
 }
 
-// ==========================================
-// RESCATE DE DESCRIPCIÓN Y PORTADA
-// ==========================================
+// Descripción y portada fallback con Google Books API si no hay datos
 if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false) {
     
     $apiKey = "AIzaSyBWAS9W-oky5pAt-GlDDSUCv5KEraFA7qI"; 
@@ -159,9 +155,7 @@ if (empty(trim($descripcion))) {
     $descripcion = "Sin descripción disponible.";
 }
 
-// ==========================================
-// PROCESAR GUARDADO/CAMBIO DE ESTADO EN LISTA
-// ==========================================
+// Procesamiento de estado y páginas si el usuario está autenticado
 if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUser) {
     $estado = trim($_POST["accion"]);
     
@@ -187,7 +181,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// OBTENER EL ESTADO ACTUAL DEL LIBRO
+// Obtener estado actual del libro para el usuario autenticado
 $estadoActual = null;
 if ($authUser) {
     $sqlEstado = "SELECT estado FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1";
@@ -206,6 +200,7 @@ if ($authUser) {
     <meta charset="UTF-8">
     <title><?= htmlspecialchars($titulo) ?></title>
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <script src="main.js"></script>
     <style>
         body {
             padding-bottom: 90px;
@@ -316,7 +311,7 @@ if ($authUser) {
         </div>
     </div>
 
-    <!-- SECCIÓN ESTADO DEL LIBRO -->
+    <!-- Sección de estado de lectura -->
     <?php if ($authUser): ?>
     <div class="panel">
         <div class="panel-header">

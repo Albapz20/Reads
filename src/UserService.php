@@ -11,9 +11,7 @@ class UserService {
         $this->db = new Database();
     }
 
-    /* ============================
-       REGISTRAR USUARIO
-       ============================ */
+    /* Registrar usuario */
     public function registrar($nombre, $email, $password) {
 
         // Comprobar si el email ya existe
@@ -35,9 +33,7 @@ class UserService {
         return true;
     }
 
-    /* ============================
-       LOGIN
-       ============================ */
+    /* Login */
     public function login($email, $password) {
 
         $sql = "SELECT * FROM usuarios WHERE email = ?";
@@ -57,9 +53,7 @@ class UserService {
         return $usuario;
     }
 
-    /* ============================
-       OBTENER USUARIO POR ID
-       ============================ */
+    /* Obtener usuario por ID */
     public function obtenerUsuarioPorId($id) {
 
         $sql = "SELECT * FROM usuarios WHERE id = ?";
@@ -69,9 +63,7 @@ class UserService {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    /* ============================
-       ACTUALIZAR DATOS DEL USUARIO
-       ============================ */
+    /* Actualizar datos del usuario */
     public function actualizarUsuario($id, $nombre, $email, $privacidad, $tema_visual) {
     $sql = "UPDATE usuarios 
             SET nombre = ?, email = ?, privacidad = ?, tema_visual = ?
@@ -81,9 +73,7 @@ class UserService {
         return $stmt->execute([$nombre, $email, $privacidad, $tema, $id]);
     }
 
-    /* ============================
-       CAMBIAR CONTRASEÑA
-       ============================ */
+    /* Cambiar contraseña */
     public function cambiarContraseña($id, $nuevaContraseña) {
 
         $passwordHash = password_hash($nuevaContraseña, PASSWORD_DEFAULT);

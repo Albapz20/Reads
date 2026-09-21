@@ -49,7 +49,7 @@ $maxPaginas = $totalLibros > 0 ? max(array_column($libros, "paginas_totales")) :
 
 <div class="container">
 
-    <!-- PANEL PRINCIPAL -->
+    <!-- Panel principal -->
     <div class="panel">
         <div class="panel-header">
             <h1>⭐ <?= $valor ?> estrellas</h1>
@@ -65,7 +65,7 @@ $maxPaginas = $totalLibros > 0 ? max(array_column($libros, "paginas_totales")) :
         <canvas id="graficoEstrellas"></canvas>
     </div>
 
-    <!-- LISTA DE LIBROS -->
+    <!-- Lista de libros -->
     <div class="panel">
         <div class="panel-header">
             <h2>📚 Libros con <?= $valor ?> estrellas</h2>

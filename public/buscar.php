@@ -10,7 +10,7 @@ if (!$usuario) {
     exit;
 }
 
-// 1. Obtener el tema visual directamente desde la BD (igual que en perfil.php)
+// Obtener el tema visual directamente desde la BD 
 $userService = new UserService();
 $datosUsuario = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datosUsuario["tema_visual"] ?? "pastel";
@@ -39,8 +39,8 @@ if (isset($_GET['q'])) {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <!-- ENLACE AL TEMA VISUAL DEL USUARIO -->
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <script src="main.js"></script>
     <title>Buscar libros</title>
     <style>
         .buscador-box {
@@ -84,13 +84,13 @@ if (isset($_GET['q'])) {
 
 <div class="container">
 
-    <!-- PANEL DEL BUSCADOR -->
+    <!-- Panel de búsqueda -->
     <div class="panel">
         <div class="panel-header">
             <h1>Buscar libros</h1>
         </div>
 
-        <!-- FORMULARIO CON LA BARRA DE BÚSQUEDA -->
+        <!-- Formulario de búsqueda -->
         <form method="GET" action="buscar.php" class="buscador-box">
             <input type="text" 
                    name="q" 
@@ -110,7 +110,7 @@ if (isset($_GET['q'])) {
         </div>
     </div>
 
-    <!-- RESULTADOS DE LA BÚSQUEDA -->
+    <!-- Resultados de búsqueda -->
     <?php if (isset($_GET['q'])): ?>
 
         <?php if (empty($resultados)): ?>
