@@ -7,7 +7,7 @@ class BookService {
 
         $queryUrl = urlencode($query);
 
-        // 1) Google Books
+        // Google Books
         $urlGoogle = "https://www.googleapis.com/books/v1/volumes?q={$queryUrl}&maxResults=20";
         $google = $this->curlGet($urlGoogle);
 
@@ -40,7 +40,7 @@ class BookService {
             return $resultados;
         }
 
-        // 2) Open Library Fallback
+        // Open Library Fallback
         $urlOL = "https://openlibrary.org/search.json?q={$queryUrl}";
         $ol = $this->curlGet($urlOL);
 
@@ -71,12 +71,11 @@ class BookService {
  // Obtener detalles de un libro por API Key
     public function obtenerLibro($id) {
 
-        // 🔑 API Key configurada
         $apiKey = "AIzaSyBWAS9W-oky5pAt-GlDDSUCv5KEraFA7qI";
 
         $esOpenLibrary = (substr($id, 0, 7) === "/works/" || substr($id, 0, 2) === "OL");
 
-        // 1. GOOGLE BOOKS (Directo por ID con API Key)
+        // GOOGLE BOOKS (Directo por ID con API Key)
         if (!$esOpenLibrary) {
             $urlGoogle = "https://www.googleapis.com/books/v1/volumes/" . urlencode($id) . "?key={$apiKey}";
             $google = $this->curlGet($urlGoogle);
@@ -105,7 +104,7 @@ class BookService {
             }
         }
 
-        // 2. OPEN LIBRARY
+        // OPEN LIBRARY
         $idOL = str_replace("/works/", "", $id);
         $urlOL = "https://openlibrary.org/works/{$idOL}.json";
         $ol = $this->curlGet($urlOL);

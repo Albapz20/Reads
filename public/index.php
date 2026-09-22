@@ -673,19 +673,19 @@ function e($texto) {
         <?php endif; ?>
     </div>
 
-    <!-- Recomendados para ti -->
+   <!-- Recomendados para ti -->
     <div class="panel" style="margin-top: 25px;">
         <div class="panel-header">
             <h2>✨ Recomendados para ti</h2>
         </div>
-        <p style="font-size: 0.85rem; color: #666; margin: -5px 0 10px 0;">
-            Porque leíste a <strong><?= e($ultimoAutor) ?></strong>
+        <p id="subtitulo-recomendados" style="font-size: 0.85rem; color: #666; margin: -5px 0 10px 0;">
+             Porque leíste a <strong><?= e($ultimoAutor) ?></strong>
         </p>
 
-        <div id="carrusel-recomendados" class="horizontal-scroll">
-            <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
-        </div>
+    <div id="carrusel-recomendados" class="horizontal-scroll">
+        <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
     </div>
+</div>
 
     <!-- La comunidad está leyendo -->
     <div class="panel" style="margin-top: 25px;">
@@ -815,11 +815,6 @@ function generarPortadaSVG(titulo) {
     return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='160' viewBox='0 0 120 160'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%231e293b;stop-opacity:1'/><stop offset='100%' style='stop-color:%230f172a;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)' rx='4'/><rect x='3' y='0' width='3' height='100%' fill='%23ffffff' opacity='0.25'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='bold' fill='%23ffffff'>${t}</text><text x='50%' y='75%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%23ffffff'>📖</text></svg>`;
 }
 
-const NOMBRES_MESES = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
-];
-
 // Buscador en tiempo real
 if (input && sugerencias) {
     input.addEventListener('input', async () => {
@@ -866,96 +861,41 @@ if (input && sugerencias) {
     });
 }
 
-// Cargar Recomendados
-async function cargarRecomendados(autor, contenedorId) {
-    const contenedor = document.getElementById(contenedorId);
-    if (!contenedor) return;
-
-    let autorLimpio = autor.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/["']/g, "").trim();
-    const url = `https://openlibrary.org/search.json?author=${encodeURIComponent(autorLimpio)}&limit=10`;
-
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const docs = data.docs || [];
-
-        if (docs.length > 0) {
-            contenedor.innerHTML = "";
-            docs.slice(0, 10).forEach(item => {
-                const titulo = item.title || "Sin título";
-                const autorNombre = item.author_name ? item.author_name[0] : autor;
-                const idLibro = item.key ? item.key.replace('/works/', '') : '';
-                const coverId = item.cover_i || item.cover_id;
-                
-                let urlOriginal = coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '';
-                let portada = coverId 
-                     ? `https://images.weserv.nl/?url=${encodeURIComponent(urlOriginal)}` 
-                        : generarPortadaSVG(titulo);
-
-                const html = `
-                    <a href="libro.php?id=${encodeURIComponent(idLibro)}&portada=${encodeURIComponent(portada)}" class="book-card-scroll" title="${titulo}">
-                        <img src="${portada}" alt="${titulo}" onerror="this.onerror=null;this.src='${generarPortadaSVG(titulo)}';">
-                        <span class="title">${titulo}</span>
-                        <span class="subtitle">${autorNombre}</span>
-                    </a>
-                `;
-                contenedor.insertAdjacentHTML('beforeend', html);
-            });
-        } else {
-            contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No se encontraron recomendaciones para este autor.</p>";
-        }
-    } catch (error) {
-        contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No se pudieron cargar las sugerencias.</p>";
-    }
-}
+// Cargar Novedades Recientes desde api_novedades.php
 async function cargarNovedadesRecientes(contenedorId) {
     const contenedor = document.getElementById(contenedorId);
     if (!contenedor) return;
 
-    // Configurar título del panel
     const tituloPanel = contenedor.closest('.panel')?.querySelector('h2');
-    if (tituloPanel) {
-        const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-        const mesStr = meses[new Date().getMonth()];
-        const anio = new Date().getFullYear();
-        tituloPanel.innerHTML = `🔥 Novedades de ${mesStr} ${anio}`;
-    }
-
-    // Lista de 10 libros con portadas locales y de OpenLibrary totalmente funcionales
-    const novedadesFallback = [
-        { titulo: "The Wolf King", autor: "Lauren Palphreyman", portada: "uploads/portadas/portada_16.jpg", id: "16" },
-        { titulo: "A Stage Set for Villains", autor: "A.K. Caggiano", portada: "uploads/portadas/portada_17.jpg", id: "17" },
-        { titulo: "Alas de Sangre", autor: "Rebecca Yarros", portada: "https://covers.openlibrary.org/b/id/13812235-M.jpg", id: "OL1" },
-        { titulo: "La magia de las casualidades", autor: "María Martínez", portada: "https://covers.openlibrary.org/b/id/12583156-M.jpg", id: "OL2" },
-        { titulo: "La casa de la buena estrella", autor: "Alyson Richman", portada: "https://covers.openlibrary.org/b/id/12832512-M.jpg", id: "OL3" },
-        { titulo: "El mapa de los anhelos", autor: "Alice Kellen", portada: "https://covers.openlibrary.org/b/id/12640211-M.jpg", id: "OL4" },
-        { titulo: "Todo lo que nunca fuimos", autor: "Alice Kellen", portada: "https://covers.openlibrary.org/b/id/12640215-M.jpg", id: "OL5" },
-        { titulo: "El chico que dibujaba constelaciones", autor: "Alice Kellen", portada: "https://covers.openlibrary.org/b/id/12640220-M.jpg", id: "OL6" },
-        { titulo: "El problema de los tres cuerpos", autor: "Cixin Liu", portada: "https://covers.openlibrary.org/b/id/9251896-M.jpg", id: "OL7" },
-        { titulo: "Cien años de soledad", autor: "Gabriel García Márquez", portada: "https://covers.openlibrary.org/b/id/10488621-M.jpg", id: "OL8" }
-    ];
 
     function renderizarLibros(lista) {
         contenedor.innerHTML = "";
+        
+        if (!lista || lista.length === 0) {
+            contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No hay novedades detectadas para este mes.</p>";
+            return;
+        }
+
         lista.forEach(item => {
-            const tienePortada = item.portada && item.portada.trim() !== '';
+            const titulo = item.titulo || item.title || 'Sin título';
+            const autor = Array.isArray(item.autor) ? item.autor.join(', ') : (item.autor || 'Autor desconocido');
+            const idLibro = item.id || item.key || '';
+            const portada = item.portada || item.cover_url || '';
+            const tienePortada = portada && portada.trim() !== '' && !portada.includes('undefined');
             
             const html = `
-                <a href="libro.php?id=${encodeURIComponent(item.id)}" class="book-card-scroll" title="${item.titulo}">
+                <a href="libro.php?id=${encodeURIComponent(idLibro)}" class="book-card-scroll" title="${titulo}">
                     <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
                         ${tienePortada 
-                            ? `<img src="${item.portada}" 
-                                    alt="${item.titulo}" 
-                                    style="width:100%; height:100%; object-fit:cover;" 
-                                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`
+                            ? `<img src="${portada}" alt="${titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`
                             : ''
                         }
                         <div class="cubierta-generada-card" style="${tienePortada ? 'display:none;' : 'display:flex;'} width:100%; height:100%; background:linear-gradient(135deg, #1e293b, #0f172a); border-radius:8px; align-items:center; justify-content:center; text-align:center; padding:8px; color:#fff; box-sizing:border-box;">
-                            <span style="font-size:10px; font-weight:bold; line-height:1.2; max-height:60px; overflow:hidden;">${item.titulo}</span>
+                            <span style="font-size:10px; font-weight:bold; line-height:1.2; max-height:60px; overflow:hidden;">${titulo}</span>
                         </div>
                     </div>
-                    <span class="title" style="display:block; margin-top:8px;">${item.titulo}</span>
-                    <span class="subtitle" style="display:block; color:#888;">${item.autor}</span>
+                    <span class="title" style="display:block; margin-top:8px;">${titulo}</span>
+                    <span class="subtitle" style="display:block; color:#888;">${autor}</span>
                 </a>
             `;
             contenedor.insertAdjacentHTML('beforeend', html);
@@ -963,35 +903,78 @@ async function cargarNovedadesRecientes(contenedorId) {
     }
 
     try {
-        const res = await fetch('https://www.googleapis.com/books/v1/volumes?q=subject:fiction&langRestrict=es&orderBy=newest&maxResults=10');
-        if (!res.ok) throw new Error("API rate limit");
+        // Conectamos con el backend PHP que filtra las novedades reales
+        const res = await fetch('api_novedades.php');
+        if (!res.ok) throw new Error("Error en la respuesta del servidor");
         
         const data = await res.json();
-        const items = data.items || [];
 
-        if (items.length > 0) {
-            const listaFormateada = items.map(item => {
-                const info = item.volumeInfo || {};
-                let urlFoto = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail || '';
-                if (urlFoto) urlFoto = urlFoto.replace('http://', 'https://');
-                return {
-                    titulo: info.title || "Sin título",
-                    autor: (info.authors && info.authors[0]) ? info.authors[0] : "Autor desconocido",
-                    portada: urlFoto,
-                    id: item.id || ''
-                };
-            });
-            renderizarLibros(listaFormateada);
-        } else {
-            renderizarLibros(novedadesFallback);
+        // Actualizar el título dinámico 
+        if (tituloPanel && data.tituloSeccion) {
+            tituloPanel.innerHTML = `🔥 ${data.tituloSeccion}`;
         }
+
+        // Renderizar libros obtenidos
+        const libros = data.libros || data.docs || [];
+        renderizarLibros(libros);
+
     } catch (error) {
-        renderizarLibros(novedadesFallback);
+        console.error("Error cargando novedades:", error);
+        contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No se pudieron cargar las novedades.</p>";
     }
 }
-document.addEventListener('DOMContentLoaded', () => {
-    cargarRecomendados("<?= addslashes($ultimoAutor) ?>", "carrusel-recomendados");
-    cargarNovedadesRecientes("carrusel-novedades");
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof cargarNovedadesRecientes === 'function') {
+        cargarNovedadesRecientes('carrusel-novedades');
+    }
+
+    const contenedorRec = document.getElementById('carrusel-recomendados');
+    const subtituloRec = document.getElementById('subtitulo-recomendados');
+
+    if (contenedorRec) {
+        fetch('api_recomendaciones.php')
+            .then(res => res.json())
+            .then(data => {
+                const autor = data.ultimoAutor || '';
+                const tituloUltimo = data.ultimoTitulo || '';
+                const libros = data.libros || [];
+
+                // Subtítulo
+                if (subtituloRec) {
+                    if (autor) {
+                        subtituloRec.innerHTML = `Porque leíste a <strong>${autor}</strong>`;
+                    } else if (tituloUltimo) {
+                        subtituloRec.innerHTML = `Porque leíste <strong>${tituloUltimo}</strong>`;
+                    } else {
+                        subtituloRec.innerHTML = `Recomendaciones para ti`;
+                    }
+                }
+
+                //  Carrusel
+                if (libros.length > 0) {
+                    contenedorRec.innerHTML = '';
+                    libros.forEach(libro => {
+                        const portadaFinal = libro.portada ? libro.portada : (typeof generarPortadaSVG === 'function' ? generarPortadaSVG(libro.titulo) : '');
+
+                        const html = `
+                            <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada)}" class="book-card-scroll" title="${libro.titulo}">
+                                <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
+                                    <img src="${portadaFinal}" alt="${libro.titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null;if(typeof generarPortadaSVG==='function') this.src=generarPortadaSVG('${libro.titulo.replace(/'/g, "\\'")}');">
+                                </div>
+                                <span class="title" style="display:block; margin-top:6px; font-size:0.85rem; line-height:1.2;">${libro.titulo}</span>
+                                <span class="subtitle" style="display:block; color:#888; font-size:0.75rem;">${libro.autor}</span>
+                            </a>
+                        `;
+                        contenedorRec.insertAdjacentHTML('beforeend', html);
+                    });
+                } else {
+                    contenedorRec.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No hay sugerencias disponibles en este momento.</p>";
+                }
+            })
+            .catch(err => {
+                console.error("Error al cargar sugerencias:", err);
+            });
+    }
 });
 </script>
 

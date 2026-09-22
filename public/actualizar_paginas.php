@@ -87,7 +87,7 @@ if ($estado === "leido") {
     $paginas_leidas = $paginas_totales;
 }
 
-//s Guardar en BD
+// Guardar en BD
 $listaService->actualizarPaginas(
     $usuario["id"],
     $libro_id,

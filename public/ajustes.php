@@ -26,9 +26,7 @@ $idiomaActual = $datos["idioma"] ?? "es";
 
 $mensaje = "";
 
-/* ==========================================
-   EXPORTAR BIBLIOTECA A FORMATO GOODREADS
-   ========================================== */
+/* Exportar biblioteca a formato csv */
 if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     $sql = "SELECT * FROM listas_lectura WHERE usuario_id = ?";
     $stmt = $db->pdo->prepare($sql);
@@ -48,13 +46,12 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
         $estanteGR = 'to-read';
         if ($libro['estado'] === 'leido') $estanteGR = 'read';
         if ($libro['estado'] === 'leyendo') $estanteGR = 'currently-reading';
-        if ($libro['estado'] === 'tbr') $estanteGR = 'to-read';
-        if ($libro['estado'] === 'guardado') $estanteGR = 'to-read';
+        if (in_array($libro['estado'], ['tbr', 'pendiente', 'guardado'])) $estanteGR = 'to-read';
 
         fputcsv($output, [
             $libro['libro_id'] ?? '',
             $libro['titulo'],
-            '',
+            $libro['autores'] ?? '',
             '',
             0,
             '',
@@ -62,8 +59,8 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
             '',
             '',
             '',
-            '',
-            $libro['creado_en'] ?? date('Y-m-d'),
+            $libro['fecha_fin'] ?? '',
+            $libro['fecha'] ?? date('Y-m-d'),
             $estanteGR,
             ''
         ]);
@@ -73,68 +70,237 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     exit;
 }
 
-/* ==========================================
-   IMPORTAR CSV DE GOODREADS
-   ========================================== */
+/* Importar CSV de Goodreads */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])) {
+    @set_time_limit(180);
+
     if (isset($_FILES["csv_file"]) && $_FILES["csv_file"]["error"] === UPLOAD_ERR_OK) {
         $fileTmpPath = $_FILES["csv_file"]["tmp_name"];
         
-        $handle = fopen($fileTmpPath, "r");
-        if ($handle !== false) {
-            $header = fgetcsv($handle, 1000, ",");
+        $content = file_get_contents($fileTmpPath);
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
+        
+        $tempStream = fopen('php://memory', 'r+');
+        fwrite($tempStream, $content);
+        rewind($tempStream);
+
+        $header = fgetcsv($tempStream, 5000, ",");
+        
+        if ($header) {
+            $headerClean = array_map(function($h) {
+                return strtolower(trim(preg_replace('/[\x00-\x1F\x7F-\xFF]/', '', $h)));
+            }, $header);
             
-            if ($header) {
-                $colMap = array_flip($header);
+            $colMap = array_flip($headerClean);
+            
+            $colTitulo    = $colMap['title'] ?? null;
+            $colAutor     = $colMap['author'] ?? null;
+            $colIsbn13    = $colMap['isbn13'] ?? null;
+            $colIsbn      = $colMap['isbn'] ?? null;
+            $colEstante   = $colMap['exclusive shelf'] ?? null;
+            $colDateRead  = $colMap['date read'] ?? null;
+            $colDateAdded = $colMap['date added'] ?? null;
+
+            $dirUploads = __DIR__ . '/uploads/portadas/';
+            if (!is_dir($dirUploads)) {
+                @mkdir($dirUploads, 0777, true);
+            }
+
+            $filas = [];
+
+            while (($data = fgetcsv($tempStream, 5000, ",")) !== false) {
+                if ($colTitulo === null || !isset($data[$colTitulo])) continue;
+
+                $titulo = trim($data[$colTitulo]);
+                if (empty($titulo)) continue;
+
+                $autor = ($colAutor !== null && isset($data[$colAutor])) ? trim($data[$colAutor]) : 'Autor desconocido';
+
+                $estanteGR = ($colEstante !== null && isset($data[$colEstante])) ? strtolower(trim($data[$colEstante])) : 'to-read';
                 
-                $colTitulo  = $colMap['Title'] ?? null;
-                $colAutor   = $colMap['Author'] ?? null;
-                $colIsbn    = $colMap['ISBN13'] ?? ($colMap['ISBN'] ?? null);
-                $colEstante = $colMap['Exclusive Shelf'] ?? null;
-
-                $importados = 0;
-
-                while (($data = fgetcsv($handle, 1000, ",")) !== false) {
-                    if ($colTitulo === null || !isset($data[$colTitulo])) continue;
-
-                    $titulo = trim($data[$colTitulo]);
-                    if (empty($titulo)) continue;
-
-                    $estanteGR = ($colEstante !== null && isset($data[$colEstante])) ? trim($data[$colEstante]) : 'to-read';
-                    
+                if ($estanteGR === 'read') {
+                    $estado = 'leido';
+                } elseif ($estanteGR === 'currently-reading') {
+                    $estado = 'leyendo';
+                } else {
                     $estado = 'tbr';
-                    if ($estanteGR === 'read') {
-                        $estado = 'leido';
-                    } elseif ($estanteGR === 'currently-reading') {
-                        $estado = 'leyendo';
-                    } elseif ($estanteGR === 'to-read') {
-                        $estado = 'tbr';
-                    }
-
-                    $portada = "https://placehold.co/350x500/e2e8f0/1e293b?text=" . urlencode($titulo);
-                    $libroId = ($colIsbn !== null && !empty($data[$colIsbn])) ? preg_replace('/[^0-9X]/i', '', $data[$colIsbn]) : uniqid('gr_');
-
-                    $listaService->agregarLibro($usuario["id"], $libroId, $titulo, $portada, $estado);
-                    
-                    $sqlObtenerId = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) ORDER BY id DESC LIMIT 1";
-                    $stmtId = $db->pdo->prepare($sqlObtenerId);
-                    $stmtId->execute([$usuario["id"], $libroId, $titulo]);
-                    $registro = $stmtId->fetch(PDO::FETCH_ASSOC);
-
-                    if ($registro) {
-                        $listaService->cambiarEstado($usuario["id"], $registro["id"], $estado);
-                    }
-
-                    $importados++;
                 }
 
-                fclose($handle);
-                $mensaje = "¡Se han importado exitosamente $importados libros desde Goodreads!";
-            } else {
-                $mensaje = "Error: El archivo CSV está vacío o es inválido.";
+                $isbnRaw = '';
+                if ($colIsbn13 !== null && !empty($data[$colIsbn13])) {
+                    $isbnRaw = $data[$colIsbn13];
+                } elseif ($colIsbn !== null && !empty($data[$colIsbn])) {
+                    $isbnRaw = $data[$colIsbn];
+                }
+                $isbnLimpio = preg_replace('/[^0-9X]/i', '', $isbnRaw);
+
+                $dateReadRaw  = ($colDateRead !== null && isset($data[$colDateRead])) ? trim($data[$colDateRead]) : '';
+                $dateAddedRaw = ($colDateAdded !== null && isset($data[$colDateAdded])) ? trim($data[$colDateAdded]) : '';
+
+                $fechaAgregado = date('Y-m-d');
+                if (!empty($dateAddedRaw)) {
+                    $timeAdded = strtotime(str_replace('/', '-', $dateAddedRaw));
+                    if ($timeAdded && $timeAdded > 0) {
+                        $fechaAgregado = date('Y-m-d', $timeAdded);
+                    }
+                }
+
+                $fechaFin = null;
+                if ($estado === 'leido') {
+                    if (!empty($dateReadRaw)) {
+                        $timeRead = strtotime(str_replace('/', '-', $dateReadRaw));
+                        if ($timeRead && $timeRead > 0) {
+                            $fechaFin = date('Y-m-d', $timeRead);
+                        }
+                    }
+                    if (empty($fechaFin)) {
+                        $fechaFin = $fechaAgregado;
+                    }
+                }
+
+                $idRef = !empty($isbnLimpio) ? $isbnLimpio : uniqid('gr_');
+
+                $filas[] = [
+                    'id_ref'        => $idRef,
+                    'isbn'          => $isbnLimpio,
+                    'titulo'        => $titulo,
+                    'autor'         => $autor,
+                    'estado'        => $estado,
+                    'fecha_fin'     => $fechaFin,
+                    'fecha'         => $fechaAgregado,
+                    'img_remote'    => null,
+                    'portada_local' => 'uploads/portadas/default.jpg'
+                ];
             }
+            fclose($tempStream);
+
+            // FASE 1: Consultar API de Google Books (con Bypassing de SSL para XAMPP)
+            if (!empty($filas) && function_exists('curl_multi_init')) {
+                $mh1 = curl_multi_init();
+                $handlesApi = [];
+
+                foreach ($filas as $idx => $f) {
+                    $nombreArchivo = (!empty($f['isbn']) ? $f['isbn'] : 'gr_' . substr(md5($f['titulo']), 0, 10)) . '.jpg';
+                    if (file_exists($dirUploads . $nombreArchivo) && filesize($dirUploads . $nombreArchivo) > 1000) {
+                        $filas[$idx]['portada_local'] = 'uploads/portadas/' . $nombreArchivo;
+                        continue;
+                    }
+
+                    if (!empty($f['isbn'])) {
+                        $apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:" . urlencode($f['isbn']);
+                    } else {
+                        $apiUrl = "https://www.googleapis.com/books/v1/volumes?q=intitle:" . urlencode($f['titulo']);
+                    }
+
+                    $ch = curl_init();
+                    curl_setopt($ch, CURLOPT_URL, $apiUrl);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Omite bloqueo SSL en XAMPP
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+                    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
+                    curl_multi_add_handle($mh1, $ch);
+                    $handlesApi[$idx] = $ch;
+                }
+
+                if (!empty($handlesApi)) {
+                    $active = null;
+                    do {
+                        $status = curl_multi_exec($mh1, $active);
+                        if ($active) {
+                            curl_multi_select($mh1);
+                        }
+                    } while ($active && $status == CURLM_OK);
+
+                    foreach ($handlesApi as $idx => $ch) {
+                        $json = curl_multi_getcontent($ch);
+                        if ($json) {
+                            $res = json_decode($json, true);
+                            if (!empty($res['items'][0]['volumeInfo']['imageLinks']['thumbnail'])) {
+                                $filas[$idx]['img_remote'] = str_replace('http://', 'https://', $res['items'][0]['volumeInfo']['imageLinks']['thumbnail']);
+                            } elseif (!empty($res['items'][0]['volumeInfo']['imageLinks']['smallThumbnail'])) {
+                                $filas[$idx]['img_remote'] = str_replace('http://', 'https://', $res['items'][0]['volumeInfo']['imageLinks']['smallThumbnail']);
+                            }
+                        }
+                        curl_multi_remove_handle($mh1, $ch);
+                        curl_close($ch);
+                    }
+                    curl_multi_close($mh1);
+                }
+
+                // FASE 2: Descargar las imágenes a la carpeta local
+                $mh2 = curl_multi_init();
+                $handlesImg = [];
+
+                foreach ($filas as $idx => $f) {
+                    if (!empty($f['img_remote'])) {
+                        $nombreArchivo = (!empty($f['isbn']) ? $f['isbn'] : 'gr_' . substr(md5($f['titulo']), 0, 10)) . '.jpg';
+                        $rutaAbsoluta = $dirUploads . $nombreArchivo;
+
+                        $ch = curl_init();
+                        curl_setopt($ch, CURLOPT_URL, $f['img_remote']);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Omite bloqueo SSL en XAMPP
+                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+                        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
+                        curl_multi_add_handle($mh2, $ch);
+                        $handlesImg[$idx] = ['ch' => $ch, 'file' => $rutaAbsoluta, 'rel' => 'uploads/portadas/' . $nombreArchivo];
+                    }
+                }
+
+                if (!empty($handlesImg)) {
+                    $active = null;
+                    do {
+                        $status = curl_multi_exec($mh2, $active);
+                        if ($active) {
+                            curl_multi_select($mh2);
+                        }
+                    } while ($active && $status == CURLM_OK);
+
+                    foreach ($handlesImg as $idx => $item) {
+                        $ch = $item['ch'];
+                        $file = $item['file'];
+                        $data = curl_multi_getcontent($ch);
+                        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+                        if ($httpCode === 200 && $data !== false && strlen($data) > 1000) {
+                            file_put_contents($file, $data);
+                            $filas[$idx]['portada_local'] = $item['rel'];
+                        }
+                        curl_multi_remove_handle($mh2, $ch);
+                        curl_close($ch);
+                    }
+                    curl_multi_close($mh2);
+                }
+            }
+
+            // FASE 3: Guardar en Base de Datos
+            $importados = 0;
+            foreach ($filas as $libro) {
+                $listaService->agregarLibro($usuario["id"], $libro['id_ref'], $libro['titulo'], $libro['portada_local'], $libro['estado']);
+
+                $sqlObtenerId = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) ORDER BY id DESC LIMIT 1";
+                $stmtId = $db->pdo->prepare($sqlObtenerId);
+                $stmtId->execute([$usuario["id"], $libro['id_ref'], $libro['titulo']]);
+                $registro = $stmtId->fetch(PDO::FETCH_ASSOC);
+
+                if ($registro) {
+                    $sqlUpdate = "UPDATE listas_lectura SET autores = ?, portada = ?, estado = ?, fecha_fin = ?, fecha = ? WHERE id = ?";
+                    $stmtUpdate = $db->pdo->prepare($sqlUpdate);
+                    $stmtUpdate->execute([$libro['autor'], $libro['portada_local'], $libro['estado'], $libro['fecha_fin'], $libro['fecha'], $registro["id"]]);
+                }
+
+                $importados++;
+            }
+
+            $mensaje = "¡Se han importado exitosamente $importados libros guardando sus portadas localmente!";
         } else {
-            $mensaje = "Error al abrir el archivo enviado.";
+            $mensaje = "Error: El archivo CSV está vacío o es inválido.";
         }
     } else {
         $mensaje = "Por favor, selecciona un archivo CSV válido.";
@@ -240,6 +406,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
                 <strong><?= htmlspecialchars($mensaje) ?></strong>
             </div>
         <?php endif; ?>
+        
         <!-- FORMULARIO DE AJUSTES GENERALES -->
         <div class="panel">
             <div class="panel-header">

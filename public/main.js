@@ -1,14 +1,14 @@
 // Función para obtener la mejor URL de portada real posible desde Open Library
 function obtenerUrlPortadaReal(item) {
-    // 1. Si viene con ID de portada directo
+    // Si viene con ID de portada directo
     if (item.cover_i) {
         return `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg`;
     }
-    // 2. Si no tiene cover_i pero tiene ISBN, Open Library suele tener la portada guardada por ISBN
+    // Si no tiene cover_i pero tiene ISBN, Open Library suele tener la portada guardada por ISBN
     if (item.isbn && item.isbn.length > 0) {
         return `https://covers.openlibrary.org/b/isbn/${item.isbn[0]}-M.jpg`;
     }
-    // 3. Si tiene clave de edición (OLID)
+    // Si tiene clave de edición (OLID)
     if (item.cover_edition_key) {
         return `https://covers.openlibrary.org/b/olid/${item.cover_edition_key}-M.jpg`;
     }
