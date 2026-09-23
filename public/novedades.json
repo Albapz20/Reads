@@ -1,0 +1,20 @@
+[
+  {
+    "id": "nov_1",
+    "titulo": "Libro Azul con Mosca",
+    "autor": "Luis Mario",
+    "portada": "uploads/portadas/libro1.jpg"
+  },
+  {
+    "id": "nov_2",
+    "titulo": "Hija del cielo",
+    "autor": "Rodrigo Cortés",
+    "portada": "uploads/portadas/libro2.jpg"
+  },
+  {
+    "id": "nov_3",
+    "titulo": "Enamorarse de un vampiro es un caos",
+    "autor": "Aura Hayes",
+    "portada": "uploads/portadas/libro3.jpg"
+  }
+]

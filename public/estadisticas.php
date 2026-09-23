@@ -8,20 +8,17 @@ $usuario = Auth::usuario();
 if (!$usuario) { header("Location: login.php"); exit; }
 
 $db = new Database();
-$ajustesService = new AjustesService();
-$userService    = new UserService();
+$ajustesService = new AjustesService();$userService    = new UserService();
 
 // Procesar formulario de actualización del objetivo anual
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["nuevo_objetivo"])) {
     $nuevoObjetivo = max(1, (int)$_POST["nuevo_objetivo"]);
     
-    if (method_exists($ajustesService, 'guardarAjuste')) {
-        $ajustesService->guardarAjuste($usuario["id"], "objetivo_anual", $nuevoObjetivo);
+    if (method_exists($ajustesService, 'guardarAjuste')) {$ajustesService->guardarAjuste($usuario["id"], "objetivo_anual", $nuevoObjetivo);
     } else {
         $sqlOpt = "INSERT INTO ajustes (usuario_id, clave, valor) VALUES (?, 'objetivo_anual', ?)
                    ON DUPLICATE KEY UPDATE valor = VALUES(valor)";
-        $stmtOpt = $db->pdo->prepare($sqlOpt);
-        $stmtOpt->execute([$usuario["id"], $nuevoObjetivo]);
+        $stmtOpt =$db->pdo->prepare($sqlOpt);$stmtOpt->execute([$usuario["id"], $nuevoObjetivo]);
     }
     header("Location: " . $_SERVER['PHP_SELF']);
     exit;
@@ -30,7 +27,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["nuevo_objetivo"])) {
 $ajustes = $ajustesService->obtenerAjustes($usuario["id"]);
 $year = date("Y");
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
-$tema = $datos["tema_visual"] ?? "pastel";
+$tema =$datos["tema_visual"] ?? "pastel";
 
 // Obtener la distribución de libros leídos por mes para el año actual
 $sqlMeses = "SELECT MONTH(fecha_fin) AS mes, COUNT(*) AS total
@@ -39,17 +36,14 @@ $sqlMeses = "SELECT MONTH(fecha_fin) AS mes, COUNT(*) AS total
              AND YEAR(fecha_fin) = ?
              GROUP BY MONTH(fecha_fin)";
 
-$stmt = $db->pdo->prepare($sqlMeses);
-$stmt->execute([$usuario["id"], $year]);
-$mesesData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+$stmt =$db->pdo->prepare($sqlMeses);$stmt->execute([$usuario["id"], $year]);
+$mesesData =$stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
 $mesesNombres = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-$mesesLabels = [];
-$mesesValores = [];
+$mesesLabels = [];$mesesValores = [];
 
 for ($i = 1; $i <= 12; $i++) {
-    $mesesLabels[] = $mesesNombres[$i - 1];
-    $mesesValores[] = isset($mesesData[$i]) ? (int)$mesesData[$i] : 0;
+    $mesesLabels[] =$mesesNombres[$i - 1];$mesesValores[] = isset($mesesData[$i]) ? (int)$mesesData[$i] : 0;
 }
 
 // Obtener el total de libros leídos en el año actual
@@ -57,22 +51,20 @@ $sqlLeidos = "SELECT COUNT(*) FROM listas_lectura
               WHERE usuario_id = ? AND estado = 'leido'
               AND YEAR(fecha_fin) = ?";
 
-$stmt = $db->pdo->prepare($sqlLeidos);
-$stmt->execute([$usuario["id"], $year]);
+$stmt =$db->pdo->prepare($sqlLeidos);$stmt->execute([$usuario["id"], $year]);
 $leidosEsteAño = (int)$stmt->fetchColumn();
 
 // Calcular el porcentaje del objetivo anual
 $objetivo = (int)($ajustes["objetivo_anual"] ?? 0);
-$porcentajeObjetivo = $objetivo > 0 ? round(($leidosEsteAño / $objetivo) * 100) : 0;
+$porcentajeObjetivo =$objetivo > 0 ? round(($leidosEsteAño / $objetivo) * 100) : 0;
 
 // Calcular el tiempo total de lectura en minutos para el año actual
 $sqlTiempo = "SELECT 
-                COALESCE(SUM(paginas_totales), 0) AS total_paginas
+                COALESCE(SUM(GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0))), 0) AS total_paginas
               FROM listas_lectura
               WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?";
 
-$stmtTiempo = $db->pdo->prepare($sqlTiempo);
-$stmtTiempo->execute([$usuario["id"], $year]);
+$stmtTiempo =$db->pdo->prepare($sqlTiempo);$stmtTiempo->execute([$usuario["id"], $year]);
 $totalPaginasAño = (int)$stmtTiempo->fetchColumn();
 
 // Estimación: 1 página equivale a 1.5 minutos de lectura
@@ -81,21 +73,36 @@ $totalMinutosLectura = (int)round($totalPaginasAño * $minutosPorPagina);
 
 // Conversión a días, horas y minutos
 $diasLectura = floor($totalMinutosLectura / 1440); // 1440 min = 1 día
-$minutosRestantesDias = $totalMinutosLectura % 1440;
+$minutosRestantesDias =$totalMinutosLectura % 1440;
 $horasLectura = floor($minutosRestantesDias / 60);
-$minutosLecturaFinal = $minutosRestantesDias % 60;
+$minutosLecturaFinal =$minutosRestantesDias % 60;
 
-// Obtener el top 5 de libros con más páginas leídas
-$sqlPaginas = "SELECT titulo, paginas_totales, portada
+// --- FILTRO Y CONSULTA TOP 5 LIBROS POR PÁGINAS ---
+$periodoTop =$_GET['periodo'] ?? 'anio';
+if (!in_array($periodoTop, ['anio', 'todos'])) {$periodoTop = 'anio';
+}
+
+if ($periodoTop === 'todos') {$whereTop = "";
+    $paramsTop = [$usuario["id"]];
+    $textoFiltroTop = "Todos los tiempos";
+} else {
+    $whereTop = " AND YEAR(fecha_fin) = ?";
+    $paramsTop = [$usuario["id"], $year];
+    $textoFiltroTop = "Año " . $year;
+}
+
+$sqlPaginas = "SELECT titulo, 
+                      GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0)) AS paginas_reales, 
+                      portada
                FROM listas_lectura
-               WHERE usuario_id = ? AND estado = 'leido'
-               ORDER BY paginas_totales DESC
+               WHERE usuario_id = ? AND estado = 'leido' {$whereTop}
+               ORDER BY paginas_reales DESC, id DESC
                LIMIT 5";
 
 $stmt = $db->pdo->prepare($sqlPaginas);
-$stmt->execute([$usuario["id"]]);
-$topPaginas = $stmt->fetchAll(PDO::FETCH_ASSOC);
-$topValores = array_map("intval", array_column($topPaginas, "paginas_totales"));
+$stmt->execute($paramsTop);
+$topPaginas =$stmt->fetchAll(PDO::FETCH_ASSOC);
+$topValores = array_map("intval", array_column($topPaginas, "paginas_reales"));
 
 // Obtener la distribución de estrellas para los libros leídos
 $sqlEstrellas = "SELECT estrellas FROM listas_lectura
@@ -103,7 +110,7 @@ $sqlEstrellas = "SELECT estrellas FROM listas_lectura
 
 $stmt = $db->pdo->prepare($sqlEstrellas);
 $stmt->execute([$usuario["id"]]);
-$estrellasRaw = $stmt->fetchAll(PDO::FETCH_COLUMN);
+$estrellasRaw =$stmt->fetchAll(PDO::FETCH_COLUMN);
 
 $estrellasLista = array_filter($estrellasRaw, fn($v) => is_numeric($v));
 $estrellasLista = array_map("floatval", $estrellasLista);
@@ -116,21 +123,17 @@ $distribucionEstrellas = [
     "1 ★" => 0
 ];
 
-if (!empty($estrellasLista)) {
-    $promedioEstrellas = round(array_sum($estrellasLista) / count($estrellasLista), 2);
-    $estrellasEnteras = array_map(fn($v) => (int)round($v), $estrellasLista);
+if (!empty($estrellasLista)) {$promedioEstrellas = round(array_sum($estrellasLista) / count($estrellasLista), 2);
+    $estrellasEnteras = array_map(fn($v) => (int)round($v),$estrellasLista);
     $frecuencias = array_count_values($estrellasEnteras);
 
     if (!empty($frecuencias)) {
         $maxFrecuencia = max($frecuencias);
-        $modas = array_keys($frecuencias, $maxFrecuencia);
-        $estrellaComun = $modas[0];
-    } else {
-        $estrellaComun = 0;
+        $modas = array_keys($frecuencias, $maxFrecuencia);$estrellaComun = $modas[0];     } else {$estrellaComun = 0;
     }
 
-    foreach ($estrellasEnteras as $val) {
-        if ($val >= 1 && $val <= 5) {
+    foreach ($estrellasEnteras as$val) {
+        if ($val >= 1 &&$val <= 5) {
             $distribucionEstrellas["{$val} ★"]++;
         }
     }
@@ -165,9 +168,44 @@ if (!empty($estrellasLista)) {
     box-shadow: 0 4px 12px rgba(0,0,0,0.04);
 }
 
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
 .panel-header h2 {
-    margin-top: 0;
+    margin: 0;
     font-size: 1.25rem;
+}
+
+.filtro-pestañas {
+    display: flex;
+    gap: 6px;
+    background: rgba(0,0,0,0.05);
+    padding: 4px;
+    border-radius: 8px;
+}
+
+.filtro-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.filtro-btn.activo {
+    background: var(--primary-color, #0078ff);
+    color: #ffffff !important;
+}
+
+.filtro-btn.inactivo {
+    color: #666666;
 }
 
 .objetivo-card-wrapper {
@@ -211,7 +249,7 @@ if (!empty($estrellasLista)) {
 .btn-reto {
     margin-top: 15px;
     background: #e9ecef;
-    color: #2b2b2b !important; /* Forzar texto oscuro para buen contraste */
+    color: #2b2b2b !important;
     border: 1px solid #ced4da;
     padding: 8px 18px;
     border-radius: 20px;
@@ -452,41 +490,58 @@ if (!empty($estrellasLista)) {
         </div>
     </div>
 
-    <!-- TOP 5 páginas -->
+    <!-- TOP 5 páginas con Filtro -->
     <div class="panel">
         <div class="panel-header">
             <h2>📚 Top 5 libros por páginas</h2>
+            <div class="filtro-pestañas">
+                <a href="estadisticas.php?periodo=anio" class="filtro-btn <?= $periodoTop === 'anio' ? 'activo' : 'inactivo' ?>">
+                    📅 Este año (<?= $year ?>)
+                </a>
+                <a href="estadisticas.php?periodo=todos" class="filtro-btn <?= $periodoTop === 'todos' ? 'activo' : 'inactivo' ?>">
+                    🌍 Todos
+                </a>
+            </div>
         </div>
 
         <div class="ranking-lista">
-            <?php 
-            $maxPaginas = !empty($topValores) ? max($topValores) : 1; 
-            foreach ($topPaginas as $index => $t): 
-                $porcentaje = round(($t['paginas_totales'] / $maxPaginas) * 100);
-                $posicion = $index + 1;
-            ?>
-                <div class="ranking-card pos-<?= $posicion ?>">
-                    <div class="ranking-portada-box">
-                        <img src="<?= $t['portada'] ?: 'img/sin_portada.png' ?>" alt="Portada" class="ranking-portada">
-                        <span class="ranking-badge">#<?= $posicion ?></span>
-                    </div>
+            <?php if (empty($topPaginas)): ?>
+                <p style="color: #777; font-size: 0.88rem; padding: 10px 0;">No hay libros leídos registrados en este período.</p>
+            <?php else: ?>
+                <?php 
+$maxPaginas = !empty($topValores) && max($topValores) > 0 ? max($topValores) : 1; 
+foreach ($topPaginas as $index => $t): 
+    $paginasLibro = (int)($t['paginas_reales'] ?? 0);
+    
+    // Si el libro tiene páginas registradas se muestran; si no, indica "Sin especificar"
+    $textoPaginas = ($paginasLibro > 0) ? number_format($paginasLibro, 0, '', '.') . ' pág.' : 'Sin especificar';
+    
+    $porcentaje = ($maxPaginas > 0 && $paginasLibro > 0) ? round(($paginasLibro / $maxPaginas) * 100) : 0;
+    $posicion = $index + 1;
+?>
+    <div class="ranking-card pos-<?= $posicion ?>">
+        <div class="ranking-portada-box">
+            <img src="<?= htmlspecialchars($t['portada'] ?: 'img/sin_portada.png') ?>" alt="Portada" class="ranking-portada">
+            <span class="ranking-badge">#<?= $posicion ?></span>
+        </div>
 
-                    <div class="ranking-detalles">
-                        <div class="ranking-top-info">
-                            <strong class="ranking-titulo"><?= htmlspecialchars($t['titulo']) ?></strong>
-                            <span class="ranking-paginas-tag theme-color-text"><?= number_format($t['paginas_totales'], 0, '', '.') ?> pág.</span>
-                        </div>
+        <div class="ranking-detalles">
+            <div class="ranking-top-info">
+                <strong class="ranking-titulo"><?= htmlspecialchars($t['titulo']) ?></strong>
+                <span class="ranking-paginas-tag theme-color-text"><?= $textoPaginas ?></span>
+            </div>
 
-                        <div class="ranking-barra-wrapper">
-                            <div class="ranking-barra-fill theme-color-bg" style="width: <?= $porcentaje ?>%;"></div>
-                        </div>
+            <div class="ranking-barra-wrapper">
+                <div class="ranking-barra-fill theme-color-bg" style="width: <?= $porcentaje ?>%;"></div>
+            </div>
 
-                        <a href="estadisticas_paginas.php?titulo=<?= urlencode($t['titulo']) ?>" class="ranking-link">
-                            Ver detalles →
-                        </a>
-                    </div>
-                </div>
-            <?php endforeach; ?>
+            <a href="estadisticas_paginas.php?titulo=<?= urlencode($t['titulo']) ?>" class="ranking-link">
+                Ver detalles →
+            </a>
+        </div>
+    </div>
+<?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -542,13 +597,11 @@ if (!empty($estrellasLista)) {
 </div>
 
 <script>
-// Función para mostrar / ocultar el formulario del reto
 function toggleFormReto() {
     const el = document.getElementById("formRetoWrapper");
     el.style.display = (el.style.display === "block") ? "none" : "block";
 }
 
-// Función para extraer el color del tema de forma directa y fiable
 function obtenerColorTema() {
     const estilos = getComputedStyle(document.documentElement);
     
@@ -597,7 +650,6 @@ function colorToRgba(color, alpha) {
 const colorTema = obtenerColorTema();
 const colorTexto = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#555555';
 
-// Aplicar estilos dinámicos al DOM
 document.querySelectorAll('.theme-color-text').forEach(el => el.style.color = colorTema);
 document.querySelectorAll('.theme-color-bg').forEach(el => el.style.backgroundColor = colorTema);
 

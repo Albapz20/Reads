@@ -30,16 +30,16 @@ $stmtMisLecturas = $db->pdo->prepare($sqlMisLecturas);
 $stmtMisLecturas->execute([$usuario["id"]]);
 $misLecturasActuales = $stmtMisLecturas->fetchAll(PDO::FETCH_ASSOC);
 
-// Estadísticas rápidas: Contamos libros terminados vs totales y páginas
+// Obtener estadísticas de libros leídos y páginas leídas este año
 $sql = "SELECT 
-            COUNT(CASE WHEN estado = 'leido' THEN 1 END) AS libros_leidos,
-            COUNT(*) AS total_libros,
-            COALESCE(SUM(paginas_leidas), 0) AS paginas_leidas,
-            COALESCE(SUM(paginas_totales), 0) AS paginas_totales
+            COUNT(*) AS libros_leidos,
+            COALESCE(SUM(CASE WHEN paginas_leidas > 0 THEN paginas_leidas ELSE paginas_totales END), 0) AS paginas_leidas
         FROM listas_lectura
-        WHERE usuario_id = ?";
+        WHERE usuario_id = ? 
+          AND estado = 'leido' 
+          AND YEAR(fecha_fin) = ?";
 $stmt = $db->pdo->prepare($sql);
-$stmt->execute([$usuario["id"]]);
+$stmt->execute([$usuario["id"], $year]);
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
 // Cálculos de métricas gamificadas
@@ -47,8 +47,32 @@ $librosLeidosNum   = (int)($stats["libros_leidos"] ?? 0);
 $paginasLeidasNum  = (int)($stats["paginas_leidas"] ?? 0);
 $paginasTotalesNum = (int)($stats["paginas_totales"] ?? 0);
 
+//Definición del Reto 
+$metaLibrosAnual = 20; 
+$porcentajeMeta  = ($metaLibrosAnual > 0) ? min(100, round(($librosLeidosNum / $metaLibrosAnual) * 100)) : 0;
+
 // Páginas por día este año
 $paginasPorDia = ($diaDelAno > 0) ? round($paginasLeidasNum / $diaDelAno, 1) : 0;
+
+// Métricas extra calculadas
+$horasLeidasEstimadas = round($paginasLeidasNum / 60, 1); // 1 min por página aprox.
+$promedioPaginasPorLibro = ($librosLeidosNum > 0) ? round($paginasLeidasNum / $librosLeidosNum) : 0;
+
+// Proyección de libros a fin de año según el ritmo actual
+$diasTotalesAno = (date("L") == 1) ? 366 : 365;
+$proyeccionLibros = ($diaDelAno > 0) ? round(($librosLeidosNum / $diaDelAno) * $diasTotalesAno) : 0;
+
+// Estado del reto
+if ($porcentajeMeta >= 100) {
+    $estadoReto = "¡Reto completado!";
+    $claseEstado = "color: #2e7d32; font-weight: bold;";
+} elseif ($librosLeidosNum >= round(($metaLibrosAnual / $diasTotalesAno) * $diaDelAno)) {
+    $estadoReto = "Vas bien, ¡sigue así!";
+    $claseEstado = "color: #0078ff; font-weight: 600;";
+} else {
+    $estadoReto = "¡Aún puedes lograrlo!";
+    $claseEstado = "color: #e65100; font-weight: 600;";
+}
 
 // Objetivo de libros para el año
 $metaLibrosAnual = 20; 
@@ -708,48 +732,67 @@ function e($texto) {
         </div>
     </div>
 
-    <!-- Resumen de lectura -->
-    <div class="panel" style="margin-top: 25px;">
-        <div class="panel-header">
-            <h2 style="color: var(--primary-color, inherit);">📈 Resumen de lectura</h2>
-        </div>
+    <!-- Resumen de lectura mejorado -->
+<div class="panel" style="margin-top: 25px;">
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="color: var(--primary-color, inherit); margin: 0;">📈 Resumen de lectura <?= $year ?></h2>
+        <span style="font-size: 0.8rem; padding: 4px 10px; background: rgba(0,120,255,0.08); border-radius: 20px; <?= $claseEstado ?>">
+            <?= $estadoReto ?>
+        </span>
+    </div>
 
-        <div class="stats-grid-index">
-            <div class="stat-card-index">
-                <div class="stat-icon-index">🏆</div>
-                <div class="stat-info-index">
-                    <h3><?= number_format($librosLeidosNum) ?></h3>
-                    <p>Libros leídos</p>
-                </div>
-            </div>
-
-            <div class="stat-card-index">
-                <div class="stat-icon-index">📖</div>
-                <div class="stat-info-index">
-                    <h3><?= number_format($paginasLeidasNum) ?></h3>
-                    <p>Páginas leídas</p>
-                </div>
-            </div>
-
-            <div class="stat-card-index">
-                <div class="stat-icon-index">⚡</div>
-                <div class="stat-info-index">
-                    <h3><?= $paginasPorDia ?></h3>
-                    <p>Págs / día este año</p>
-                </div>
+    <!-- Rejilla de 4 tarjetas estadísticas -->
+    <div class="stats-grid-index" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 15px;">
+        
+        <div class="stat-card-index">
+            <div class="stat-icon-index">🏆</div>
+            <div class="stat-info-index">
+                <h3><?= number_format($librosLeidosNum) ?></h3>
+                <p>Libros en <?= $year ?></p>
             </div>
         </div>
 
-        <div class="progreso-global-box">
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
-                <span>🎯 Reto de lectura <?= $year ?> (<?= $librosLeidosNum ?> de <?= $metaLibrosAnual ?> libros)</span>
-                <span><?= $porcentajeMeta ?>%</span>
+        <div class="stat-card-index">
+            <div class="stat-icon-index">📖</div>
+            <div class="stat-info-index">
+                <h3><?= number_format($paginasLeidasNum) ?></h3>
+                <p>Páginas leídas</p>
             </div>
-            <div class="barra-progreso-bg">
-                <div class="barra-progreso-fill" style="width: <?= $porcentajeMeta ?>%;"></div>
+        </div>
+
+        <div class="stat-card-index">
+            <div class="stat-icon-index">⚡</div>
+            <div class="stat-info-index">
+                <h3><?= $paginasPorDia ?></h3>
+                <p>Págs / día</p>
             </div>
+        </div>
+
+        <div class="stat-card-index">
+            <div class="stat-icon-index">⏱️</div>
+            <div class="stat-info-index">
+                <h3>~<?= $horasLeidasEstimadas ?>h</h3>
+                <p>Tiempo leído</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Barra del Reto de Lectura -->
+    <div class="progreso-global-box" style="margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px;">
+            <span>🎯 Reto <?= $year ?>: <?= $librosLeidosNum ?> de <?= $metaLibrosAnual ?> libros</span>
+            <span><?= $porcentajeMeta ?>%</span>
+        </div>
+        <div class="barra-progreso-bg">
+            <div class="barra-progreso-fill" style="width: <?= $porcentajeMeta ?>%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #777; margin-top: 6px;">
+            <span>Media: <?= $promedioPaginasPorLibro ?> págs/libro</span>
+            <span>Proyección a fin de año: ~<?= $proyeccionLibros ?> libros</span>
         </div>
     </div>
+</div>
 
     <!-- Búsquedas recientes -->
     <div class="panel" style="margin-top: 25px;">
@@ -815,7 +858,7 @@ function generarPortadaSVG(titulo) {
     return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='160' viewBox='0 0 120 160'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%231e293b;stop-opacity:1'/><stop offset='100%' style='stop-color:%230f172a;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)' rx='4'/><rect x='3' y='0' width='3' height='100%' fill='%23ffffff' opacity='0.25'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='bold' fill='%23ffffff'>${t}</text><text x='50%' y='75%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%23ffffff'>📖</text></svg>`;
 }
 
-// Buscador en tiempo real
+// 1. Buscador en tiempo real
 if (input && sugerencias) {
     input.addEventListener('input', async () => {
         const texto = input.value.trim();
@@ -861,38 +904,40 @@ if (input && sugerencias) {
     });
 }
 
-// Cargar Novedades Recientes desde api_novedades.php
+// 2. // Cargar Novedades Recientes directamente en tiempo real (sin PHP intermedio)
 async function cargarNovedadesRecientes(contenedorId) {
     const contenedor = document.getElementById(contenedorId);
     if (!contenedor) return;
 
     const tituloPanel = contenedor.closest('.panel')?.querySelector('h2');
 
-    function renderizarLibros(lista) {
-        contenedor.innerHTML = "";
+    try {
+        const res = await fetch('api_novedades.php');
+        if (!res.ok) throw new Error("HTTP Error " + res.status);
         
-        if (!lista || lista.length === 0) {
-            contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No hay novedades detectadas para este mes.</p>";
+        const data = await res.json();
+
+        // Actualiza el título dinámicamente (ej: 🔥 Novedades de septiembre 2026)
+        if (tituloPanel && data.tituloSeccion) {
+            tituloPanel.innerHTML = `🔥 ${data.tituloSeccion}`;
+        }
+
+        if (!data.libros || data.libros.length === 0) {
+            contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No hay novedades disponibles en este momento.</p>";
             return;
         }
 
-        lista.forEach(item => {
-            const titulo = item.titulo || item.title || 'Sin título';
-            const autor = Array.isArray(item.autor) ? item.autor.join(', ') : (item.autor || 'Autor desconocido');
-            const idLibro = item.id || item.key || '';
-            const portada = item.portada || item.cover_url || '';
-            const tienePortada = portada && portada.trim() !== '' && !portada.includes('undefined');
-            
+        contenedor.innerHTML = "";
+
+        data.libros.forEach(item => {
+            const titulo = item.titulo || 'Sin título';
+            const autor = item.autor || 'Autor desconocido';
+            const portadaFinal = item.portada ? item.portada : generarPortadaSVG(titulo);
+
             const html = `
-                <a href="libro.php?id=${encodeURIComponent(idLibro)}" class="book-card-scroll" title="${titulo}">
+                <a href="libro.php?id=${encodeURIComponent(item.id)}" class="book-card-scroll" title="${titulo}">
                     <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
-                        ${tienePortada 
-                            ? `<img src="${portada}" alt="${titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`
-                            : ''
-                        }
-                        <div class="cubierta-generada-card" style="${tienePortada ? 'display:none;' : 'display:flex;'} width:100%; height:100%; background:linear-gradient(135deg, #1e293b, #0f172a); border-radius:8px; align-items:center; justify-content:center; text-align:center; padding:8px; color:#fff; box-sizing:border-box;">
-                            <span style="font-size:10px; font-weight:bold; line-height:1.2; max-height:60px; overflow:hidden;">${titulo}</span>
-                        </div>
+                        <img src="${portadaFinal}" alt="${titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.src=generarPortadaSVG('${titulo.replace(/'/g, "\\'")}');">
                     </div>
                     <span class="title" style="display:block; margin-top:8px;">${titulo}</span>
                     <span class="subtitle" style="display:block; color:#888;">${autor}</span>
@@ -900,29 +945,13 @@ async function cargarNovedadesRecientes(contenedorId) {
             `;
             contenedor.insertAdjacentHTML('beforeend', html);
         });
-    }
-
-    try {
-        // Conectamos con el backend PHP que filtra las novedades reales
-        const res = await fetch('api_novedades.php');
-        if (!res.ok) throw new Error("Error en la respuesta del servidor");
-        
-        const data = await res.json();
-
-        // Actualizar el título dinámico 
-        if (tituloPanel && data.tituloSeccion) {
-            tituloPanel.innerHTML = `🔥 ${data.tituloSeccion}`;
-        }
-
-        // Renderizar libros obtenidos
-        const libros = data.libros || data.docs || [];
-        renderizarLibros(libros);
 
     } catch (error) {
-        console.error("Error cargando novedades:", error);
-        contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No se pudieron cargar las novedades.</p>";
+        console.error("Error al cargar novedades:", error);
+        contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No se pudieron cargar las novedades en tiempo real.</p>";
     }
 }
+// 3. Inicializador principal
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof cargarNovedadesRecientes === 'function') {
         cargarNovedadesRecientes('carrusel-novedades');
@@ -939,7 +968,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const tituloUltimo = data.ultimoTitulo || '';
                 const libros = data.libros || [];
 
-                // Subtítulo
                 if (subtituloRec) {
                     if (autor) {
                         subtituloRec.innerHTML = `Porque leíste a <strong>${autor}</strong>`;
@@ -950,16 +978,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
 
-                //  Carrusel
                 if (libros.length > 0) {
                     contenedorRec.innerHTML = '';
                     libros.forEach(libro => {
-                        const portadaFinal = libro.portada ? libro.portada : (typeof generarPortadaSVG === 'function' ? generarPortadaSVG(libro.titulo) : '');
+                        const portadaFinal = libro.portada ? libro.portada : generarPortadaSVG(libro.titulo);
 
                         const html = `
-                            <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada)}" class="book-card-scroll" title="${libro.titulo}">
+                            <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada || '')}" class="book-card-scroll" title="${libro.titulo}">
                                 <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
-                                    <img src="${portadaFinal}" alt="${libro.titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null;if(typeof generarPortadaSVG==='function') this.src=generarPortadaSVG('${libro.titulo.replace(/'/g, "\\'")}');">
+                                    <img src="${portadaFinal}" alt="${libro.titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.src=generarPortadaSVG('${libro.titulo.replace(/'/g, "\\'")}');">
                                 </div>
                                 <span class="title" style="display:block; margin-top:6px; font-size:0.85rem; line-height:1.2;">${libro.titulo}</span>
                                 <span class="subtitle" style="display:block; color:#888; font-size:0.75rem;">${libro.autor}</span>
