@@ -17,16 +17,48 @@ $userService    = new UserService();
 $listaService   = new ListaService();
 $db             = new Database();
 
-$ajustesService->crearAjustesSiNoExisten($usuario["id"]);
-$ajustes = $ajustesService->obtenerAjustes($usuario["id"]);
-
+// Obtener usuario e información del tema
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
-$idiomaActual = $datos["idioma"] ?? "es";
+$tema = strtolower(trim($tema));
 
 $mensaje = "";
 
-/* Exportar biblioteca a formato csv */
+/* Guardar tema visual */
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
+    $tema_visual = $_POST["tema_visual"];
+
+    $sql = "UPDATE usuarios SET tema_visual = ? WHERE id = ?";
+    $stmt = $db->pdo->prepare($sql);
+    $stmt->execute([$tema_visual, $usuario["id"]]);
+
+    if (isset($_SESSION["usuario"])) {
+        $_SESSION["usuario"]["tema_visual"] = $tema_visual;
+    }
+
+    $usuario["tema_visual"] = $tema_visual;
+    $tema = $tema_visual;
+
+    $mensaje = "Tema visual actualizado a " . ucfirst($tema) . ".";
+}
+
+// Obtener o crear ajustes en la tabla 'ajustes_usuario'
+$stmtAjustes = $db->pdo->prepare("SELECT * FROM ajustes_usuario WHERE usuario_id = ? LIMIT 1");
+$stmtAjustes->execute([$usuario["id"]]);
+$ajustes = $stmtAjustes->fetch(PDO::FETCH_ASSOC);
+
+if (!$ajustes) {
+    $db->pdo->prepare("INSERT INTO ajustes_usuario (usuario_id, mostrar_email, mostrar_listas, objetivo_anual) VALUES (?, 1, 1, 20)")
+            ->execute([$usuario["id"]]);
+    $ajustes = ["mostrar_email" => 1, "mostrar_listas" => 1, "objetivo_anual" => 20];
+}
+
+// Contar total de libros del usuario
+$stmtCount = $db->pdo->prepare("SELECT COUNT(*) FROM listas_lectura WHERE usuario_id = ?");
+$stmtCount->execute([$usuario["id"]]);
+$totalLibrosUsuario = (int)$stmtCount->fetchColumn();
+
+/* 2. EXPORTAR BIBLIOTECA A CSV */
 if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     $sql = "SELECT * FROM listas_lectura WHERE usuario_id = ?";
     $stmt = $db->pdo->prepare($sql);
@@ -39,7 +71,6 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     header('Content-Disposition: attachment; filename=' . $filename);
 
     $output = fopen('php://output', 'w');
-
     fputcsv($output, ['Book Id', 'Title', 'Author', 'ISBN', 'My Rating', 'Average Rating', 'Publisher', 'Binding', 'Year Published', 'Original Publication Year', 'Date Read', 'Date Added', 'Exclusive Shelf', 'My Review']);
 
     foreach ($libros as $libro) {
@@ -70,13 +101,12 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     exit;
 }
 
-/* Importar CSV de Goodreads */
+/* 3. IMPORTAR CSV DE GOODREADS */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])) {
     @set_time_limit(180);
 
     if (isset($_FILES["csv_file"]) && $_FILES["csv_file"]["error"] === UPLOAD_ERR_OK) {
         $fileTmpPath = $_FILES["csv_file"]["tmp_name"];
-        
         $content = file_get_contents($fileTmpPath);
         $content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
         
@@ -92,7 +122,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
             }, $header);
             
             $colMap = array_flip($headerClean);
-            
             $colTitulo    = $colMap['title'] ?? null;
             $colAutor     = $colMap['author'] ?? null;
             $colIsbn13    = $colMap['isbn13'] ?? null;
@@ -107,15 +136,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
             }
 
             $filas = [];
-
             while (($data = fgetcsv($tempStream, 5000, ",")) !== false) {
                 if ($colTitulo === null || !isset($data[$colTitulo])) continue;
-
                 $titulo = trim($data[$colTitulo]);
                 if (empty($titulo)) continue;
 
                 $autor = ($colAutor !== null && isset($data[$colAutor])) ? trim($data[$colAutor]) : 'Autor desconocido';
-
                 $estanteGR = ($colEstante !== null && isset($data[$colEstante])) ? strtolower(trim($data[$colEstante])) : 'to-read';
                 
                 if ($estanteGR === 'read') {
@@ -168,137 +194,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
                     'estado'        => $estado,
                     'fecha_fin'     => $fechaFin,
                     'fecha'         => $fechaAgregado,
-                    'img_remote'    => null,
                     'portada_local' => 'uploads/portadas/default.jpg'
                 ];
             }
             fclose($tempStream);
 
-            // FASE 1: Consultar API de Google Books (con Bypassing de SSL para XAMPP)
-            if (!empty($filas) && function_exists('curl_multi_init')) {
-                $mh1 = curl_multi_init();
-                $handlesApi = [];
-
-                foreach ($filas as $idx => $f) {
-                    $nombreArchivo = (!empty($f['isbn']) ? $f['isbn'] : 'gr_' . substr(md5($f['titulo']), 0, 10)) . '.jpg';
-                    if (file_exists($dirUploads . $nombreArchivo) && filesize($dirUploads . $nombreArchivo) > 1000) {
-                        $filas[$idx]['portada_local'] = 'uploads/portadas/' . $nombreArchivo;
-                        continue;
-                    }
-
-                    if (!empty($f['isbn'])) {
-                        $apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:" . urlencode($f['isbn']);
-                    } else {
-                        $apiUrl = "https://www.googleapis.com/books/v1/volumes?q=intitle:" . urlencode($f['titulo']);
-                    }
-
-                    $ch = curl_init();
-                    curl_setopt($ch, CURLOPT_URL, $apiUrl);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Omite bloqueo SSL en XAMPP
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-                    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
-                    curl_multi_add_handle($mh1, $ch);
-                    $handlesApi[$idx] = $ch;
-                }
-
-                if (!empty($handlesApi)) {
-                    $active = null;
-                    do {
-                        $status = curl_multi_exec($mh1, $active);
-                        if ($active) {
-                            curl_multi_select($mh1);
-                        }
-                    } while ($active && $status == CURLM_OK);
-
-                    foreach ($handlesApi as $idx => $ch) {
-                        $json = curl_multi_getcontent($ch);
-                        if ($json) {
-                            $res = json_decode($json, true);
-                            if (!empty($res['items'][0]['volumeInfo']['imageLinks']['thumbnail'])) {
-                                $filas[$idx]['img_remote'] = str_replace('http://', 'https://', $res['items'][0]['volumeInfo']['imageLinks']['thumbnail']);
-                            } elseif (!empty($res['items'][0]['volumeInfo']['imageLinks']['smallThumbnail'])) {
-                                $filas[$idx]['img_remote'] = str_replace('http://', 'https://', $res['items'][0]['volumeInfo']['imageLinks']['smallThumbnail']);
-                            }
-                        }
-                        curl_multi_remove_handle($mh1, $ch);
-                        curl_close($ch);
-                    }
-                    curl_multi_close($mh1);
-                }
-
-                // FASE 2: Descargar las imágenes a la carpeta local
-                $mh2 = curl_multi_init();
-                $handlesImg = [];
-
-                foreach ($filas as $idx => $f) {
-                    if (!empty($f['img_remote'])) {
-                        $nombreArchivo = (!empty($f['isbn']) ? $f['isbn'] : 'gr_' . substr(md5($f['titulo']), 0, 10)) . '.jpg';
-                        $rutaAbsoluta = $dirUploads . $nombreArchivo;
-
-                        $ch = curl_init();
-                        curl_setopt($ch, CURLOPT_URL, $f['img_remote']);
-                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Omite bloqueo SSL en XAMPP
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                        curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-                        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
-                        curl_multi_add_handle($mh2, $ch);
-                        $handlesImg[$idx] = ['ch' => $ch, 'file' => $rutaAbsoluta, 'rel' => 'uploads/portadas/' . $nombreArchivo];
-                    }
-                }
-
-                if (!empty($handlesImg)) {
-                    $active = null;
-                    do {
-                        $status = curl_multi_exec($mh2, $active);
-                        if ($active) {
-                            curl_multi_select($mh2);
-                        }
-                    } while ($active && $status == CURLM_OK);
-
-                    foreach ($handlesImg as $idx => $item) {
-                        $ch = $item['ch'];
-                        $file = $item['file'];
-                        $data = curl_multi_getcontent($ch);
-                        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-                        if ($httpCode === 200 && $data !== false && strlen($data) > 1000) {
-                            file_put_contents($file, $data);
-                            $filas[$idx]['portada_local'] = $item['rel'];
-                        }
-                        curl_multi_remove_handle($mh2, $ch);
-                        curl_close($ch);
-                    }
-                    curl_multi_close($mh2);
-                }
-            }
-
-            // FASE 3: Guardar en Base de Datos
             $importados = 0;
             foreach ($filas as $libro) {
                 $listaService->agregarLibro($usuario["id"], $libro['id_ref'], $libro['titulo'], $libro['portada_local'], $libro['estado']);
-
-                $sqlObtenerId = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) ORDER BY id DESC LIMIT 1";
-                $stmtId = $db->pdo->prepare($sqlObtenerId);
-                $stmtId->execute([$usuario["id"], $libro['id_ref'], $libro['titulo']]);
-                $registro = $stmtId->fetch(PDO::FETCH_ASSOC);
-
-                if ($registro) {
-                    $sqlUpdate = "UPDATE listas_lectura SET autores = ?, portada = ?, estado = ?, fecha_fin = ?, fecha = ? WHERE id = ?";
-                    $stmtUpdate = $db->pdo->prepare($sqlUpdate);
-                    $stmtUpdate->execute([$libro['autor'], $libro['portada_local'], $libro['estado'], $libro['fecha_fin'], $libro['fecha'], $registro["id"]]);
-                }
-
                 $importados++;
             }
 
-            $mensaje = "¡Se han importado exitosamente $importados libros guardando sus portadas localmente!";
+            $mensaje = "¡Se han importado exitosamente $importados libros!";
         } else {
             $mensaje = "Error: El archivo CSV está vacío o es inválido.";
         }
@@ -307,66 +214,48 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
     }
 }
 
-/* GUARDAR AJUSTES GENERALES */
+/* 4. GUARDAR AJUSTES GENERALES (NOMBRE, EMAIL, OBJETIVO Y PRIVACIDAD) */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_ajustes"])) {
+    $nuevoNombre    = trim($_POST["nombre"] ?? "");
+    $nuevoEmail     = trim($_POST["email"] ?? "");
+    $privacidad     = $_POST["privacidad"] ?? "publico";
+    $mostrar_email  = ($privacidad === "publico") ? 1 : 0;
+    $mostrar_listas = ($privacidad === "publico") ? 1 : 0;
+    $objetivo_anual = isset($_POST["objetivo_anual"]) ? (int)$_POST["objetivo_anual"] : 20;
 
-    $mostrar_email = isset($_POST["mostrar_email"]) ? 1 : 0;
-    $mostrar_listas = isset($_POST["mostrar_listas"]) ? 1 : 0;
-    $objetivo_anual = isset($_POST["objetivo_anual"]) ? (int)$_POST["objetivo_anual"] : 50;
+    // Actualizar nombre y email en la tabla 'usuarios'
+    if (!empty($nuevoNombre) && !empty($nuevoEmail)) {
+        $stmtUser = $db->pdo->prepare("UPDATE usuarios SET nombre = ?, email = ? WHERE id = ?");
+        $stmtUser->execute([$nuevoNombre, $nuevoEmail, $usuario["id"]]);
 
-    if ($ajustesService->actualizarAjustes(
-        $usuario["id"],
-        $mostrar_email,
-        $mostrar_listas,
-        $objetivo_anual
-    )) {
-        $mensaje = "Ajustes guardados correctamente.";
-    } else {
-        $mensaje = "Error al guardar los ajustes.";
+        if (isset($_SESSION["usuario"])) {
+            $_SESSION["usuario"]["nombre"] = $nuevoNombre;
+            $_SESSION["usuario"]["email"]  = $nuevoEmail;
+        }
+        $usuario["nombre"] = $nuevoNombre;
+        $usuario["email"]  = $nuevoEmail;
+        $datos["nombre"]   = $nuevoNombre;
+        $datos["email"]    = $nuevoEmail;
     }
 
-    $ajustes = $ajustesService->obtenerAjustes($usuario["id"]);
+    // Actualizar objetivo y visibilidad en 'ajustes_usuario'
+    $stmtUp = $db->pdo->prepare("UPDATE ajustes_usuario SET mostrar_email = ?, mostrar_listas = ?, objetivo_anual = ? WHERE usuario_id = ?");
+    $stmtUp->execute([$mostrar_email, $mostrar_listas, $objetivo_anual, $usuario["id"]]);
+
+    $ajustes["mostrar_email"]  = $mostrar_email;
+    $ajustes["mostrar_listas"] = $mostrar_listas;
+    $ajustes["objetivo_anual"] = $objetivo_anual;
+
+    $mensaje = "Ajustes del perfil guardados correctamente.";
 }
 
-/* GUARDAR TEMA VISUAL */
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
-
-    $tema_visual = $_POST["tema_visual"];
-
-    $sql = "UPDATE usuarios SET tema_visual = ? WHERE id = ?";
-    $stmt = $db->pdo->prepare($sql);
-    $stmt->execute([$tema_visual, $usuario["id"]]);
-
-    $usuario["tema_visual"] = $tema_visual;
-    $tema = $tema_visual;
-
-    $mensaje = "Tema visual actualizado.";
-}
-
-/* GUARDAR IDIOMA */
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_idioma"])) {
-    $nuevoIdioma = $_POST["idioma"];
-
-    $sql = "UPDATE usuarios SET idioma = ? WHERE id = ?";
-    $stmt = $db->pdo->prepare($sql);
-    
-    if ($stmt->execute([$nuevoIdioma, $usuario["id"]])) {
-        $_SESSION["usuario"]["idioma"] = $nuevoIdioma;
-        $idiomaActual = $nuevoIdioma;
-        $mensaje = "Idioma de la aplicación actualizado.";
-    } else {
-        $mensaje = "Error al actualizar el idioma.";
-    }
-}
-
-/* ENVIAR MENSAJE DE CONTACTO */
+/* 5. ENVIAR MENSAJE DE CONTACTO */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
     $asunto  = trim($_POST["asunto"]);
     $mensajeContacto = trim($_POST["mensaje_contacto"]);
 
     if (!empty($asunto) && !empty($mensajeContacto)) {
         $correoService = new CorreoService();
-        
         $enviado = $correoService->enviarContacto(
             $usuario["email"],
             $usuario["nombre"] ?? "Usuario Reads",
@@ -375,122 +264,437 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
         );
 
         if ($enviado) {
-            $mensaje = "¡Gracias por contactarnos! Tu mensaje ha sido enviado correctamente a nuestro equipo.";
+            $mensaje = "¡Gracias por contactarnos! Tu mensaje ha sido enviado correctamente.";
         } else {
-            $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde o verifica la configuración de correo.";
+            $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde.";
         }
     } else {
         $mensaje = "Por favor, completa todos los campos del formulario de contacto.";
     }
 }
+
+// Configuración de las 9 tarjetas de temas
+$temasDisponibles = [
+    'pastel'      => ['nombre' => 'Pastel', 'icono' => '🌸', 'bg' => '#fdf0f2', 'border' => '#e8a5b2', 'text' => '#4a2c32'],
+    'sand'        => ['nombre' => 'Sand', 'icono' => '🏖️', 'bg' => '#fbf7ee', 'border' => '#d9c9a3', 'text' => '#4a3f2c'],
+    'dracula'     => ['nombre' => 'Dracula', 'icono' => '🐉', 'bg' => '#383a59', 'border' => '#ff79c6', 'text' => '#f8f8f2'],
+    'coffee'      => ['nombre' => 'Coffee', 'icono' => '☕', 'bg' => '#f5efe6', 'border' => '#c2b09b', 'text' => '#3e2723'],
+    'dark'        => ['nombre' => 'Dark / Slate', 'icono' => '🔮', 'bg' => '#2d3748', 'border' => '#4a5568', 'text' => '#edf2f7'],
+    'minimalista' => ['nombre' => 'Minimalista', 'icono' => '📐', 'bg' => '#ffffff', 'border' => '#cbd5e1', 'text' => '#1e293b'],
+    'sunset'      => ['nombre' => 'Sunset', 'icono' => '🌅', 'bg' => '#fff5eb', 'border' => '#f97316', 'text' => '#431407'],
+    'azul'        => ['nombre' => 'Azul Calmado', 'icono' => '💙', 'bg' => '#f0f7ff', 'border' => '#3b82f6', 'text' => '#1e3a8a'],
+    'naturalista' => ['nombre' => 'Naturalista', 'icono' => '🌿', 'bg' => '#f4f7f4', 'border' => '#4d7c0f', 'text' => '#14532d']
+];
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
-    <title>Ajustes</title>
-</head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajustes de la aplicación</title>
 
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 30px 15px 110px 15px;
+        }
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+        }
+        .header-section {
+            margin-bottom: 25px;
+        }
+        .header-section h1 {
+            font-size: 1.8rem;
+            margin: 0 0 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-section p {
+            margin: 0;
+            font-size: 0.95rem;
+            opacity: 0.8;
+        }
+        .card-panel {
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+        }
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 800;
+            margin: 0 0 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-subtitle {
+            font-size: 0.88rem;
+            opacity: 0.75;
+            margin: 0 0 20px 0;
+        }
+        
+        /* TEMAS GRID */
+        .temas-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+        @media (max-width: 650px) {
+            .temas-grid { grid-template-columns: 1fr; }
+        }
+        .tema-card {
+            border-radius: 16px;
+            padding: 16px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 75px;
+            text-align: left;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .tema-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+        }
+        .tema-card.activo {
+            border-color: currentColor !important;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+        }
+        .tema-card-dot {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            width: 10px;
+            height: 10px;
+            background: currentColor;
+            border-radius: 50%;
+        }
+        .tema-card-icon {
+            font-size: 1.4rem;
+            margin-bottom: 10px;
+        }
+        .tema-card-name {
+            font-weight: 800;
+            font-size: 0.92rem;
+        }
+
+        /* FORMULARIOS & INPUTS */
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+        @media (max-width: 600px) {
+            .form-grid-2 { grid-template-columns: 1fr; }
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            box-sizing: border-box;
+            outline: none;
+        }
+        .btn-submit-container {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .btn-pill {
+            border: none;
+            padding: 11px 26px;
+            border-radius: 25px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .btn-pill:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        /* IMPORTAR / EXPORTAR GRID */
+        .goodreads-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 650px) {
+            .goodreads-grid { grid-template-columns: 1fr; }
+        }
+        .goodreads-box {
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .goodreads-box h3 {
+            font-size: 0.95rem;
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .goodreads-box p {
+            font-size: 0.85rem;
+            margin: 0 0 15px 0;
+            line-height: 1.4;
+            opacity: 0.8;
+        }
+        .btn-white-card {
+            border-radius: 12px;
+            padding: 12px 16px;
+            width: 100%;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.88rem;
+            cursor: pointer;
+            box-sizing: border-box;
+            display: inline-block;
+            text-decoration: none;
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+
+        /* NAVEGACIÓN FLOTANTE */
+        .floating-nav-container {
+            position: fixed !important;
+            bottom: 20px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 999999 !important;
+            width: calc(100% - 40px) !important;
+            max-width: 600px !important;
+            display: block !important;
+        }
+
+        .quick-nav-floating {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-around !important;
+            padding: 8px 12px !important;
+            background: #ffffff !important;
+            border: 1px solid rgba(0, 0, 0, 0.12) !important;
+            border-radius: 20px !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+        }
+
+        .nav-card-float {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            padding: 6px 12px !important;
+            text-decoration: none !important;
+            color: #2d3748 !important;
+            font-weight: 700 !important;
+            font-size: 0.8rem !important;
+            border-radius: 12px !important;
+            transition: all 0.2s ease !important;
+        }
+
+        .nav-card-float:hover,
+        .nav-card-float.active {
+            color: var(--color-primario, #d87d8a) !important;
+            transform: translateY(-2px) !important;
+        }
+
+        .nav-card-float .nav-icon {
+            font-size: 1.25rem !important;
+            margin-bottom: 2px !important;
+        }
+    </style>
+
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+</head>
 <body>
 
 <div class="container">
 
-    <div class="panel">
-        <div class="panel-header">
-            <h1>Ajustes de la aplicación</h1>
+    <!-- CABECERA -->
+    <div class="header-section">
+        <h1>⚙️ Ajustes de la aplicación</h1>
+        <p>Personaliza tu experiencia, estilos visuales e importación de libros</p>
+    </div>
+
+    <?php if ($mensaje): ?>
+        <div class="panel alert-box" style="margin-bottom: 20px; font-weight: bold;">
+            <?= htmlspecialchars($mensaje) ?>
         </div>
+    <?php endif; ?>
 
-        <?php if ($mensaje): ?>
-            <div class="review-card">
-                <strong><?= htmlspecialchars($mensaje) ?></strong>
+    <!-- TARJETA 1: ESTILO VISUAL & TEMAS -->
+    <div class="panel card-panel">
+        <h2 class="card-title">🎨 Estilo Visual & Temas (9)</h2>
+        <p class="card-subtitle">Elige la paleta visual que mejor se adapte a tu estado de ánimo o momento del día:</p>
+
+        <form method="POST" id="formTema">
+            <input type="hidden" name="guardar_tema" value="1">
+            <input type="hidden" name="tema_visual" id="inputTemaVisual" value="<?= htmlspecialchars($tema) ?>">
+
+            <div class="temas-grid">
+                <?php foreach ($temasDisponibles as $key => $tInfo): ?>
+                    <button type="button" 
+                            class="tema-card <?= ($tema === $key) ? 'activo' : '' ?>" 
+                            style="background-color: <?= $tInfo['bg'] ?>; border-color: <?= ($tema === $key) ? 'currentColor' : $tInfo['border'] ?>; color: <?= $tInfo['text'] ?>;"
+                            onclick="seleccionarTema('<?= $key ?>')">
+                        <?php if ($tema === $key): ?>
+                            <span class="tema-card-dot"></span>
+                        <?php endif; ?>
+                        <div class="tema-card-icon"><?= $tInfo['icono'] ?></div>
+                        <div class="tema-card-name"><?= $tInfo['nombre'] ?></div>
+                    </button>
+                <?php endforeach; ?>
             </div>
-        <?php endif; ?>
-        
-        <!-- FORMULARIO DE AJUSTES GENERALES -->
-        <div class="panel">
-            <div class="panel-header">
-                <h2>Ajustes generales</h2>
+        </form>
+    </div>
+
+    <!-- TARJETA 2: AJUSTES GENERALES DEL PERFIL (EDITABLE) -->
+    <div class="panel card-panel">
+        <h2 class="card-title">Ajustes generales del perfil</h2>
+
+        <form method="POST">
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Nombre de usuario:</label>
+                    <input type="text" name="nombre" class="form-control" value="<?= htmlspecialchars($datos['nombre'] ?? $usuario['nombre'] ?? 'Usuario') ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Correo electrónico:</label>
+                    <input type="email" name="email" class="form-control" value="<?= htmlspecialchars($datos['email'] ?? $usuario['email'] ?? '') ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Objetivo anual de lectura (libros):</label>
+                    <input type="number" name="objetivo_anual" class="form-control" min="1" max="500" value="<?= htmlspecialchars($ajustes['objetivo_anual'] ?? 20) ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Privacidad del perfil:</label>
+                    <select name="privacidad" class="form-control">
+                        <option value="publico" <?= ($ajustes['mostrar_listas'] == 1) ? 'selected' : '' ?>>Público</option>
+                        <option value="privado" <?= ($ajustes['mostrar_listas'] == 0) ? 'selected' : '' ?>>Privado</option>
+                    </select>
+                </div>
             </div>
 
-            <form method="POST">
-
-                <label>
-                    <input type="checkbox" name="mostrar_email" <?= $ajustes["mostrar_email"] ? "checked" : "" ?>>
-                    Mostrar mi email públicamente
-                </label><br><br>
-
-                <label>
-                    <input type="checkbox" name="mostrar_listas" <?= $ajustes["mostrar_listas"] ? "checked" : "" ?>>
-                    Mostrar mis listas de lectura en el perfil
-                </label><br><br>
-
-                <label><strong>Objetivo anual de lectura (libros):</strong></label><br>
-                <input type="number" name="objetivo_anual" min="1" max="500"
-                       value="<?= htmlspecialchars($ajustes["objetivo_anual"]) ?>"><br><br>
-
-                <button type="submit" name="guardar_ajustes">Guardar ajustes</button>
-            </form>
-        </div>
-
-        <!-- SECCIÓN IMPORTAR / EXPORTAR GOODREADS -->
-        <div class="panel">
-            <div class="panel-header">
-                <h2>📚 Importar / Exportar Goodreads</h2>
+            <div class="btn-submit-container">
+                <button type="submit" name="guardar_ajustes" class="submit-btn btn-pill">Guardar ajustes</button>
             </div>
+        </form>
+    </div>
 
-            <div style="margin-bottom: 20px;">
-                <p><strong>📥 Importar tus libros:</strong></p>
-                <p style="font-size: 0.9rem; color: #666;">
-                    Sube el archivo <code>.csv</code> exportado desde Goodreads (<em>My Books &gt; Import/Export</em>).
-                </p>
-                <form method="POST" enctype="multipart/form-data">
-                    <input type="file" name="csv_file" accept=".csv" required><br><br>
-                    <button type="submit" name="importar_goodreads">Importar desde Goodreads</button>
+    <!-- TARJETA 3: IMPORTAR / EXPORTAR GOODREADS -->
+    <div class="panel card-panel">
+        <h2 class="card-title">📤📚 Importar / Exportar Goodreads</h2>
+
+        <div class="goodreads-grid">
+            <div class="review-card goodreads-box">
+                <div>
+                    <h3>📌 Importar biblioteca desde CSV:</h3>
+                    <p>Sube tu archivo <code>.csv</code> descargado de Goodreads (<em>My Books &gt; Import/Export</em>). Detectará títulos, autores, número de páginas, estado y valoraciones.</p>
+                </div>
+                <form method="POST" enctype="multipart/form-data" id="formImportarCSV">
+                    <input type="hidden" name="importar_goodreads" value="1">
+                    <input type="file" name="csv_file" id="inputCSV" accept=".csv" style="display: none;" onchange="document.getElementById('formImportarCSV').submit();">
+                    <button type="button" class="btn-white-card" onclick="document.getElementById('inputCSV').click();">
+                        📤 Seleccionar archivo CSV
+                    </button>
                 </form>
             </div>
 
-            <hr style="border: 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 20px 0;">
-
-            <div>
-                <p><strong>📤 Exportar tus libros:</strong></p>
-                <p style="font-size: 0.9rem; color: #666;">
-                    Descarga tu estantería en un archivo CSV compatible con Goodreads.
-                </p>
-                <a href="ajustes.php?exportar=goodreads">
-                    <button type="button">Descargar mi biblioteca (.CSV)</button>
+            <div class="review-card goodreads-box">
+                <div>
+                    <h3>📌 Exportar mi biblioteca:</h3>
+                    <p>Descarga tu biblioteca completa (<strong><?= $totalLibrosUsuario ?> libros</strong>) en un archivo <code>.csv</code> estándar compatible con Goodreads, Excel y Notion.</p>
+                </div>
+                <a href="ajustes.php?exportar=goodreads" class="btn-white-card">
+                    📥 Descargar mi biblioteca (.CSV)
                 </a>
             </div>
         </div>
+    </div>
 
-        <!-- SECCIÓN CONTACTA CON NOSOTROS -->
-        <div class="panel">
-            <div class="panel-header">
-                <h2>📩 Contacta con nosotros</h2>
+    <!-- TARJETA 4: CONTACTA CON EL EQUIPO -->
+    <div class="panel card-panel">
+        <h2 class="card-title">📩 Contacta con el equipo</h2>
+        <p class="card-subtitle">¿Tienes sugerencias, ideas de nuevas funciones o has encontrado alguna duda? Envíanos tu mensaje:</p>
+
+        <form method="POST">
+            <div class="form-group" style="margin-bottom: 15px;">
+                <input type="text" name="asunto" class="form-control" placeholder="Asunto (Ej: Sugerencia de mejora / Nuevos filtros)" required>
             </div>
 
-            <p style="font-size: 0.9rem; color: #666;">
-                ¿Tienes dudas, alguna sugerencia o has encontrado un problema? Envíanos un mensaje:
-            </p>
+            <div class="form-group" style="margin-bottom: 18px;">
+                <textarea name="mensaje_contacto" class="form-control" rows="4" placeholder="Escribe aquí tu consulta o comentario detallado..." required style="resize: vertical;"></textarea>
+            </div>
 
-            <form method="POST">
-                <label><strong>Asunto:</strong></label><br>
-                <input type="text" name="asunto" placeholder="Ej: Sugerencia de mejora / Error al cargar un libro" required style="width: 100%; box-sizing: border-box; padding: 8px; margin-top: 5px;"><br><br>
+            <button type="submit" name="enviar_contacto" class="submit-btn btn-pill">
+                📩 Enviar mensaje
+            </button>
+        </form>
+    </div>
 
-                <label><strong>Mensaje:</strong></label><br>
-                <textarea name="mensaje_contacto" rows="4" placeholder="Escribe aquí tu consulta detallada..." required style="width: 100%; box-sizing: border-box; padding: 8px; margin-top: 5px;"></textarea><br><br>
-
-                <button type="submit" name="enviar_contacto">Enviar mensaje</button>
-            </form>
-        </div>
-
-        <div class="acciones-perfil">
-            <a href="perfil.php">← Volver al perfil</a>
-        </div>
-
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="perfil.php" style="text-decoration: none; font-size: 0.9rem; font-weight: 600;">← Volver al perfil</a>
     </div>
 
 </div>
 
+<!-- Navegación flotante -->
+<div class="floating-nav-container">
+    <nav class="quick-nav-floating">
+        <a href="index.php" class="nav-card-float">
+            <span class="nav-icon">🏠</span>
+            <span>Inicio</span>
+        </a>
+        <a href="perfil.php" class="nav-card-float">
+            <span class="nav-icon">👤</span>
+            <span>Mi perfil</span>
+        </a>
+        <a href="biblioteca.php" class="nav-card-float">
+            <span class="nav-icon">📚</span>
+            <span>Mi estantería</span>
+        </a>
+        <a href="estadisticas.php" class="nav-card-float">
+            <span class="nav-icon">📊</span>
+            <span>Estadísticas</span>
+        </a>
+        <a href="buscar.php" class="nav-card-float">
+            <span class="nav-icon">🔍</span>
+            <span>Buscar</span>
+        </a>
+    </nav>
+</div>
+
+<script>
+function seleccionarTema(nombreTema) {
+    document.getElementById('inputTemaVisual').value = nombreTema;
+    document.getElementById('formTema').submit();
+}
+</script>
 </body>
 </html>

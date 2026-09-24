@@ -31,9 +31,9 @@ $urlDeseosPublica = $protocolo . "://" . $_SERVER['HTTP_HOST'] . "/Reads/vistas/
 $urlQR = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" . urlencode($urlDeseosPublica);
 $textoWhatsApp = urlencode("¡Hola! Te comparto mi wishlist de libros para que veas cuáles me gustaría leer: " . $urlDeseosPublica);
 
-// Función para renderizar los libros dentro de cada pestaña
+// Función optimizada para renderizar los libros dentro de cada pestaña
 function renderizarContenidoLista($lista, $esListaDeseos = false) {
-    global $listaService, $usuario;
+    global $usuario;
 
     if (empty($lista)) {
         echo "<p style='color: var(--color-subtexto, #64748b); padding: 30px 0; text-align: center; font-style: italic;'>No hay libros en esta categoría.</p>";
@@ -43,27 +43,6 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
     foreach ($lista as $libro) {
         $paginasTotales = (int)($libro["paginas_totales"] ?? 0);
         $paginasLeidas  = (int)($libro["paginas_leidas"] ?? 0);
-
-        if ($paginasTotales === 0) {
-            $query = urlencode($libro["titulo"] . " " . ($libro["autores"] ?? ""));
-            $url = "https://openlibrary.org/search.json?q=" . $query;
-            $opts = ["http" => ["method" => "GET", "header" => "User-Agent: ReadingApp/1.0\r\n", "timeout" => 2]];
-            $json = @file_get_contents($url, false, stream_context_create($opts));
-
-            if ($json) {
-                $data = json_decode($json, true);
-                if (!empty($data["docs"][0])) {
-                    $doc = $data["docs"][0];
-                    $paginasTotales = (int)($doc["number_of_pages_median"] ?? $doc["number_of_pages"] ?? 0);
-                }
-            }
-
-            if ($paginasTotales === 0) {
-                $paginasTotales = 300;
-            }
-
-            $listaService->actualizarPaginas($usuario["id"], $libro["id"], $paginasTotales, $paginasLeidas);
-        }
 
         $progreso = $paginasTotales > 0
             ? round(($paginasLeidas / $paginasTotales) * 100)
@@ -85,7 +64,9 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         ?>
         <div class="panel-libro-item">
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                <img src="<?= htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg') ?>" style="width: 70px; height: 105px; object-fit: cover; border-radius: 6px;">
+                <img src="<?= htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg') ?>" 
+                     style="width: 70px; height: 105px; object-fit: cover; border-radius: 6px;" 
+                     onerror="this.src='https://placehold.co/350x500/e2e8f0/1e293b?text=Sin+Portada';">
 
                 <div style="flex: 1;">
                     <h4 style="margin: 0 0 4px 0; font-size: 1.1rem; color: inherit;"><?= $tituloEscapado ?></h4>
@@ -268,7 +249,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
     <script src="main.js"></script>
     <title>Mi perfil</title>
 <style>
@@ -276,7 +257,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         font-family: system-ui, -apple-system, sans-serif;
         margin: 0;
         padding: 20px;
-        padding-bottom: 100px;
+        padding-bottom: 110px !important;
     }
 
     .container {
@@ -284,7 +265,6 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         margin: 0 auto;
     }
 
-    /* CARD DE BANNER Y PERFIL */
     .perfil-card {
         border-radius: 16px;
         margin-bottom: 25px;
@@ -378,7 +358,6 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         border: 1px solid rgba(239, 68, 68, 0.3);
     }
 
-    /* CARD DE MIS LISTAS CON BOTÓN DESTACADO */
     .perfil-listas-card {
         padding: 28px;
     }
@@ -402,7 +381,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         gap: 8px;
     }
 
-    /* BOTÓN WISHLIST DESTACADO LATERAL */
+    /* Wishlist */
     .wishlist-btn-destacado {
         display: inline-flex;
         align-items: center;
@@ -439,7 +418,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         background: rgba(255, 255, 255, 0.25);
     }
 
-    /* PESTAÑAS PRINCIPALES (4 CATEGORÍAS) */
+    /* Pestañas principales */
     .tabs-listas {
         display: flex;
         background: rgba(0, 0, 0, 0.04);
@@ -495,7 +474,7 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
     .tab-content { display: none !important; }
     .tab-content.active { display: block !important; }
 
-    /* TARJETAS DE LIBROS Y COMPARTIR */
+    /* Tarjetas de libros y compartir */
     .panel-libro-item {
         border-radius: 14px;
         padding: 18px;
@@ -548,46 +527,51 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
         border: 1px solid rgba(0, 0, 0, 0.15);
     }
 
-    /* NAVEGACIÓN FLOTANTE */
+    /* NAVEGACIÓN FLOTANTE FIJA Y VISIBLE */
     .floating-nav-container {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 1000;
-        width: calc(100% - 40px);
-        max-width: 600px;
+        position: fixed !important;
+        bottom: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 999999 !important;
+        width: calc(100% - 40px) !important;
+        max-width: 600px !important;
+        display: block !important;
     }
 
     .quick-nav-floating {
-        display: flex;
-        align-items: center;
-        justify-content: space-around;
-        padding: 8px 12px;
-        background: rgba(255, 255, 255, 0.88);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.6);
-        border-radius: 20px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-around !important;
+        padding: 8px 12px !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(0, 0, 0, 0.12) !important;
+        border-radius: 20px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
     }
 
     .nav-card-float {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        text-decoration: none;
-        color: inherit;
-        font-weight: 600;
-        font-size: 0.8rem;
-        border-radius: 12px;
-        transition: all 0.2s ease;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        padding: 6px 12px !important;
+        text-decoration: none !important;
+        color: #2d3748 !important;
+        font-weight: 700 !important;
+        font-size: 0.8rem !important;
+        border-radius: 12px !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .nav-card-float:hover,
+    .nav-card-float.active {
+        color: var(--color-primario, #d87d8a) !important;
+        transform: translateY(-2px) !important;
     }
 
     .nav-card-float .nav-icon {
-        font-size: 1.25rem;
-        margin-bottom: 2px;
+        font-size: 1.25rem !important;
+        margin-bottom: 2px !important;
     }
 
     /* RESPONSIVE */
@@ -656,22 +640,22 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
             </button>
         </div>
 
-        <!-- PESTAÑA TBR (ACTIVA POR DEFECTO) -->
+        <!-- Pestaña TBr -->
         <div id="lista-tbr" class="tab-content active">
             <?php renderizarContenidoLista($tbr, false); ?>
         </div>
 
-        <!-- PESTAÑA LEYENDO -->
+        <!-- Pestaña leyendo -->
         <div id="lista-leyendo" class="tab-content">
             <?php renderizarContenidoLista($leyendo, false); ?>
         </div>
 
-        <!-- PESTAÑA LEÍDOS -->
+        <!-- Pestaña leídos -->
         <div id="lista-leidos" class="tab-content">
             <?php renderizarContenidoLista($leidos, false); ?>
         </div>
 
-        <!-- PESTAÑA ABANDONADOS -->
+        <!-- Pestaña abandonados -->
         <div id="lista-abandonados" class="tab-content">
             <?php renderizarContenidoLista($abandonados, false); ?>
         </div>
@@ -708,6 +692,10 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
+        <a href="perfil.php" class="nav-card-float active">
+            <span class="nav-icon">👤</span>
+            <span>Mi perfil</span>
+        </a>
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
@@ -716,38 +704,30 @@ function renderizarContenidoLista($lista, $esListaDeseos = false) {
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
         </a>
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>
-        </a>
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
-            <span>Buscar libros</span>
+            <span>Buscar</span>
         </a>
     </nav>
 </div>
 
 <script>
 function openTab(evt, tabName) {
-    // Ocultar todos los contenidos
     const contents = document.getElementsByClassName("tab-content");
     for (let i = 0; i < contents.length; i++) {
         contents[i].classList.remove("active");
     }
 
-    // Limpiar estado activo de botones estándar
     const tabButtons = document.getElementsByClassName("tab-btn");
     for (let i = 0; i < tabButtons.length; i++) {
         tabButtons[i].classList.remove("active");
     }
 
-    // Limpiar estado activo de Wishlist destacado
     const wishlistBtn = document.querySelector(".wishlist-btn-destacado");
     if (wishlistBtn) {
         wishlistBtn.classList.remove("active");
     }
 
-    // Activar el contenedor deseado y el botón presionado
     document.getElementById("lista-" + tabName).classList.add("active");
     evt.currentTarget.classList.add("active");
 }

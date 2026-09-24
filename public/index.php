@@ -21,7 +21,7 @@ $db = new Database();
 $year = date("Y");
 $diaDelAno = date("z") + 1; // Días transcurridos en el año actual
 
-// Obtener todos los libros que el propio usuario está leyendo actualmente (Swipe / Carrusel personal)
+// Obtener todos los libros que el usuario está leyendo actualmente
 $sqlMisLecturas = "SELECT l.* 
                    FROM listas_lectura l 
                    WHERE l.usuario_id = ? AND l.estado = 'leyendo' 
@@ -42,23 +42,32 @@ $stmt = $db->pdo->prepare($sql);
 $stmt->execute([$usuario["id"], $year]);
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Cálculos de métricas gamificadas
+// Cálculos de métricas
 $librosLeidosNum   = (int)($stats["libros_leidos"] ?? 0);
 $paginasLeidasNum  = (int)($stats["paginas_leidas"] ?? 0);
-$paginasTotalesNum = (int)($stats["paginas_totales"] ?? 0);
 
-//Definición del Reto 
-$metaLibrosAnual = 20; 
+// Obtener el objetivo de lectura dinámico desde ajustes_usuario
+$sqlAjustes = "SELECT objetivo_anual FROM ajustes_usuario WHERE usuario_id = ? LIMIT 1";
+$stmtAjustes = $db->pdo->prepare($sqlAjustes);
+$stmtAjustes->execute([$usuario["id"]]);
+$rowAjustes = $stmtAjustes->fetch(PDO::FETCH_ASSOC);
+
+$metaLibrosAnual = !empty($rowAjustes["objetivo_anual"]) ? (int)$rowAjustes["objetivo_anual"] : 20;
 $porcentajeMeta  = ($metaLibrosAnual > 0) ? min(100, round(($librosLeidosNum / $metaLibrosAnual) * 100)) : 0;
+
+// Variables enlazadas con la vista HTML
+$librosLeidos   = $librosLeidosNum;
+$objetivoAnual  = $metaLibrosAnual;
+$porcentajeReto = $porcentajeMeta;
 
 // Páginas por día este año
 $paginasPorDia = ($diaDelAno > 0) ? round($paginasLeidasNum / $diaDelAno, 1) : 0;
 
 // Métricas extra calculadas
-$horasLeidasEstimadas = round($paginasLeidasNum / 60, 1); // 1 min por página aprox.
+$horasLeidasEstimadas = round($paginasLeidasNum / 60, 1);
 $promedioPaginasPorLibro = ($librosLeidosNum > 0) ? round($paginasLeidasNum / $librosLeidosNum) : 0;
 
-// Proyección de libros a fin de año según el ritmo actual
+// Proyección a fin de año
 $diasTotalesAno = (date("L") == 1) ? 366 : 365;
 $proyeccionLibros = ($diaDelAno > 0) ? round(($librosLeidosNum / $diaDelAno) * $diasTotalesAno) : 0;
 
@@ -73,10 +82,6 @@ if ($porcentajeMeta >= 100) {
     $estadoReto = "¡Aún puedes lograrlo!";
     $claseEstado = "color: #e65100; font-weight: 600;";
 }
-
-// Objetivo de libros para el año
-$metaLibrosAnual = 20; 
-$porcentajeMeta = ($metaLibrosAnual > 0) ? min(100, round(($librosLeidosNum / $metaLibrosAnual) * 100)) : 0;
 
 // Saludo dinámico
 $hora = date("H");
@@ -93,7 +98,6 @@ $stmt = $db->pdo->prepare($sqlBiblioteca);
 $stmt->execute([$usuario["id"], $year]);
 $librosPreview = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Obtenemos el último autor leído
 $ultimoAutor = !empty($librosPreview[0]['autores']) ? $librosPreview[0]['autores'] : 'Elísabet Benavent';
 
 // Historial de búsqueda
@@ -106,7 +110,6 @@ $stmt = $db->pdo->prepare($sql);
 $stmt->execute([$usuario["id"]]);
 $historial = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Filtrado de búsquedas únicas
 $busquedasUnicas = [];
 if (!empty($historial) && is_array($historial)) {
     foreach ($historial as $h) {
@@ -517,17 +520,16 @@ function e($texto) {
             display: flex;
             flex-wrap: wrap;
             gap: 0.5rem;
-            margin-top: 0.75rem;
         }
 
         .search-tag-item {
-            background: var(--bg-card, #ffffff);
-            border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+            background: var(--bg-card, rgba(0,0,0,0.04));
+            border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
             color: var(--text-color, inherit);
             padding: 0.4rem 0.85rem;
             border-radius: 20px;
             font-size: 0.85rem;
-            font-weight: 500;
+            font-weight: 600;
             text-decoration: none;
             transition: all 0.2s ease;
         }
@@ -706,10 +708,10 @@ function e($texto) {
              Porque leíste a <strong><?= e($ultimoAutor) ?></strong>
         </p>
 
-    <div id="carrusel-recomendados" class="horizontal-scroll">
-        <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
+        <div id="carrusel-recomendados" class="horizontal-scroll">
+            <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
+        </div>
     </div>
-</div>
 
     <!-- La comunidad está leyendo -->
     <div class="panel" style="margin-top: 25px;">
@@ -733,83 +735,87 @@ function e($texto) {
     </div>
 
     <!-- Resumen de lectura mejorado -->
-<div class="panel" style="margin-top: 25px;">
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="color: var(--primary-color, inherit); margin: 0;">📈 Resumen de lectura <?= $year ?></h2>
-        <span style="font-size: 0.8rem; padding: 4px 10px; background: rgba(0,120,255,0.08); border-radius: 20px; <?= $claseEstado ?>">
-            <?= $estadoReto ?>
-        </span>
-    </div>
-
-    <!-- Rejilla de 4 tarjetas estadísticas -->
-    <div class="stats-grid-index" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 15px;">
-        
-        <div class="stat-card-index">
-            <div class="stat-icon-index">🏆</div>
-            <div class="stat-info-index">
-                <h3><?= number_format($librosLeidosNum) ?></h3>
-                <p>Libros en <?= $year ?></p>
-            </div>
-        </div>
-
-        <div class="stat-card-index">
-            <div class="stat-icon-index">📖</div>
-            <div class="stat-info-index">
-                <h3><?= number_format($paginasLeidasNum) ?></h3>
-                <p>Páginas leídas</p>
-            </div>
-        </div>
-
-        <div class="stat-card-index">
-            <div class="stat-icon-index">⚡</div>
-            <div class="stat-info-index">
-                <h3><?= $paginasPorDia ?></h3>
-                <p>Págs / día</p>
-            </div>
-        </div>
-
-        <div class="stat-card-index">
-            <div class="stat-icon-index">⏱️</div>
-            <div class="stat-info-index">
-                <h3>~<?= $horasLeidasEstimadas ?>h</h3>
-                <p>Tiempo leído</p>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- Barra del Reto de Lectura -->
-    <div class="progreso-global-box" style="margin-top: 20px;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px;">
-            <span>🎯 Reto <?= $year ?>: <?= $librosLeidosNum ?> de <?= $metaLibrosAnual ?> libros</span>
-            <span><?= $porcentajeMeta ?>%</span>
-        </div>
-        <div class="barra-progreso-bg">
-            <div class="barra-progreso-fill" style="width: <?= $porcentajeMeta ?>%;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #777; margin-top: 6px;">
-            <span>Media: <?= $promedioPaginasPorLibro ?> págs/libro</span>
-            <span>Proyección a fin de año: ~<?= $proyeccionLibros ?> libros</span>
-        </div>
-    </div>
-</div>
-
-    <!-- Búsquedas recientes -->
     <div class="panel" style="margin-top: 25px;">
-        <div class="panel-header">
-            <h2 style="color: var(--primary-color, inherit);">🔎 Búsquedas recientes</h2>
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="color: var(--primary-color, inherit); margin: 0;">📈 Resumen de lectura <?= $year ?></h2>
+            <span style="font-size: 0.8rem; padding: 4px 10px; background: rgba(0,120,255,0.08); border-radius: 20px; <?= $claseEstado ?>">
+                <?= $estadoReto ?>
+            </span>
         </div>
 
-        <div class="search-tags-container">
-            <?php if (!empty($busquedasUnicas)): ?>
-                <?php foreach ($busquedasUnicas as $busqueda): ?>
-                    <a href="buscar.php?q=<?= urlencode($busqueda) ?>" class="search-tag-item">
-                        <?= e($busqueda) ?>
-                    </a>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <span style="font-size: 0.85rem; opacity: 0.6;">Sin búsquedas recientes</span>
-            <?php endif; ?>
+        <!-- Rejilla de 4 tarjetas estadísticas -->
+        <div class="stats-grid-index" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 15px;">
+            
+            <div class="stat-card-index">
+                <div class="stat-icon-index">🏆</div>
+                <div class="stat-info-index">
+                    <h3><?= number_format($librosLeidosNum) ?></h3>
+                    <p>Libros en <?= $year ?></p>
+                </div>
+            </div>
+
+            <div class="stat-card-index">
+                <div class="stat-icon-index">📖</div>
+                <div class="stat-info-index">
+                    <h3><?= number_format($paginasLeidasNum) ?></h3>
+                    <p>Páginas leídas</p>
+                </div>
+            </div>
+
+            <div class="stat-card-index">
+                <div class="stat-icon-index">⚡</div>
+                <div class="stat-info-index">
+                    <h3><?= $paginasPorDia ?></h3>
+                    <p>Págs / día</p>
+                </div>
+            </div>
+
+            <div class="stat-card-index">
+                <div class="stat-icon-index">⏱️</div>
+                <div class="stat-info-index">
+                    <h3>~<?= $horasLeidasEstimadas ?>h</h3>
+                    <p>Tiempo leído</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Barra del Reto de Lectura -->
+        <div class="panel" style="margin-top: 15px; padding: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span>🎯 <strong>Reto <?= date('Y') ?>:</strong> <?= $librosLeidos ?> de <?= $objetivoAnual ?> libros</span>
+                <strong><?= $porcentajeReto ?>%</strong>
+            </div>
+
+            <div class="barra-progreso-bg" style="height: 10px; background: #e2e8f0; border-radius: 10px; overflow: hidden;">
+                <div class="barra-progreso-fill" style="width: <?= $porcentajeReto ?>%; height: 100%; background: var(--color-primario, #2d5a27);"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #777; margin-top: 6px;">
+                <span>Media: <?= $promedioPaginasPorLibro ?> págs/libro</span>
+                <span>Proyección a fin de año: ~<?= $proyeccionLibros ?> libros</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Búsquedas recientes-->
+    <div class="panel" style="margin-top: 25px; padding: 15px 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <h2 style="color: var(--primary-color, inherit); margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 6px;">
+                🔎 Búsquedas recientes
+            </h2>
+
+            <div class="search-tags-container">
+                <?php if (!empty($busquedasUnicas)): ?>
+                    <?php foreach ($busquedasUnicas as $busqueda): ?>
+                        <a href="buscar.php?q=<?= urlencode($busqueda) ?>" class="search-tag-item">
+                            <?= e($busqueda) ?>
+                        </a>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <span style="font-size: 0.85rem; opacity: 0.6;">Sin búsquedas recientes</span>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 
@@ -858,7 +864,7 @@ function generarPortadaSVG(titulo) {
     return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='160' viewBox='0 0 120 160'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%231e293b;stop-opacity:1'/><stop offset='100%' style='stop-color:%230f172a;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)' rx='4'/><rect x='3' y='0' width='3' height='100%' fill='%23ffffff' opacity='0.25'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='bold' fill='%23ffffff'>${t}</text><text x='50%' y='75%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%23ffffff'>📖</text></svg>`;
 }
 
-// 1. Buscador en tiempo real
+// Buscador en tiempo real
 if (input && sugerencias) {
     input.addEventListener('input', async () => {
         const texto = input.value.trim();
@@ -904,7 +910,7 @@ if (input && sugerencias) {
     });
 }
 
-// 2. // Cargar Novedades Recientes directamente en tiempo real (sin PHP intermedio)
+// Cargar Novedades Recientes directamente en tiempo real 
 async function cargarNovedadesRecientes(contenedorId) {
     const contenedor = document.getElementById(contenedorId);
     if (!contenedor) return;
@@ -917,7 +923,7 @@ async function cargarNovedadesRecientes(contenedorId) {
         
         const data = await res.json();
 
-        // Actualiza el título dinámicamente (ej: 🔥 Novedades de septiembre 2026)
+        // Actualiza el título dinámicamente 
         if (tituloPanel && data.tituloSeccion) {
             tituloPanel.innerHTML = `🔥 ${data.tituloSeccion}`;
         }
@@ -951,7 +957,8 @@ async function cargarNovedadesRecientes(contenedorId) {
         contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No se pudieron cargar las novedades en tiempo real.</p>";
     }
 }
-// 3. Inicializador principal
+
+// Inicializador principal
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof cargarNovedadesRecientes === 'function') {
         cargarNovedadesRecientes('carrusel-novedades');

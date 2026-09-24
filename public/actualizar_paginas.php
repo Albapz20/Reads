@@ -37,7 +37,7 @@ $paginas_totales  = (int)($libro["paginas_totales"] ?? 0);
 $paginas_leidas   = isset($_POST["paginas_leidas"]) ? (int)$_POST["paginas_leidas"] : (int)$libro["paginas_leidas"];
 $estado           = $_POST["estado"] ?? $libro["estado"];
 
-// 1. Función para buscar páginas en Google Books API (mucho más precisa)
+// Función para buscar páginas en Google Books API 
 function buscarPaginasGoogleBooks($titulo, $autor) {
     $busqueda = urlencode(trim($titulo . " " . $autor));
     $url = "https://www.googleapis.com/books/v1/volumes?q=" . $busqueda . "&maxResults=1&langRestrict=es";
@@ -61,7 +61,7 @@ function buscarPaginasGoogleBooks($titulo, $autor) {
     return 0;
 }
 
-// 2. Función para buscar páginas en Open Library (Respaldo)
+// Función para buscar páginas en Open Library (Respaldo)
 function buscarPaginasEnOpenLibrary($titulo, $autor) {
     $query = urlencode(trim($titulo . " " . $autor));
     $url = "https://openlibrary.org/search.json?q=" . $query . "&limit=1";
@@ -90,8 +90,6 @@ function buscarPaginasEnOpenLibrary($titulo, $autor) {
     }
     return 0;
 }
-
-// LÓGICA DE REVISIÓN Y RECUPERACIÓN DE PÁGINAS:
 // Si el usuario introdujo manualmente las páginas, se respeta ese valor
 if ($paginas_manuales > 0) {
     $paginas_totales = $paginas_manuales;

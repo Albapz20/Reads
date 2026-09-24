@@ -40,16 +40,41 @@ if (!isset($_GET['id'])) die("Libro no encontrado");
 $id_externo = $_GET['id'];
 $descripcionURL = isset($_GET['desc']) ? trim(urldecode($_GET['desc'])) : '';
 
+// Intentar obtener el libro desde la API
 $libroAPI = $service->obtenerLibro($id_externo);
 
-if (!$libroAPI) die("No se pudo obtener información del libro.");
+// Rescate desde la base de datos si no se encuentra en la API
+if (!$libroAPI) {
+    $sqlLocal = "SELECT libro_id, titulo, autores, portada FROM listas_lectura WHERE id = ? OR libro_id = ? LIMIT 1";
+    $stmtLocal = $db->pdo->prepare($sqlLocal);
+    $stmtLocal->execute([$id_externo, $id_externo]);
+    $libroBD = $stmtLocal->fetch(PDO::FETCH_ASSOC);
+
+    if ($libroBD) {
+        $autoresArray = array_filter(array_map('trim', explode(',', $libroBD["autores"] ?? '')));
+        $libroAPI = [
+            "volumeInfo" => [
+                "title" => $libroBD["titulo"],
+                "authors" => !empty($autoresArray) ? $autoresArray : ["Autor desconocido"],
+                "imageLinks" => ["thumbnail" => $libroBD["portada"]],
+                "description" => "Sin descripción disponible.",
+                "pageCount" => 0
+            ]
+        ];
+        if (!empty($libroBD["libro_id"])) {
+            $id_externo = $libroBD["libro_id"];
+        }
+    } else {
+        die("No se pudo obtener información del libro.");
+    }
+}
 
 $paginasTotalesAPI = 0;
 $proveedor = "google_books";
 
-// Tratamiento de datos según la fuente (Google Books o Open Library)
+// Tratamiento de datos según la fuente 
 if (isset($libroAPI["volumeInfo"])) {
-    // ---- GOOGLE BOOKS DIRECTO ----
+    // ---- GOOGLE BOOKS  ----
     $info = $libroAPI["volumeInfo"];
     $titulo = $info["title"] ?? "Sin título";
     $autor = isset($info["authors"]) ? implode(", ", $info["authors"]) : "Autor desconocido";
@@ -67,7 +92,7 @@ if (isset($libroAPI["volumeInfo"])) {
     $idioma = $info["language"] ?? "";
     $paginasTotalesAPI = (int)($info["pageCount"] ?? 0);
 } else {
-    // ---- NORMALIZADO (BookService u Open Library) ----
+    // ---- OPEN LIBRARY ----
     $proveedor = "open_library";
     $titulo = $libroAPI["title"] ?? "Sin título";
     
@@ -159,10 +184,10 @@ if (empty(trim($descripcion))) {
 if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUser) {
     $estado = trim($_POST["accion"]);
     
-    // 1. Añade o actualiza el registro base
+    // Añade o actualiza el registro base
     $listaService->agregarLibro($authUser["id"], $id_externo, $titulo, $portada, $estado);
     
-    // 2. Busca la ID generada y asegura el estado / fechas / páginas
+    // Busca la ID generada y asegura el estado / fechas / páginas
     $sqlObtenerId = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) ORDER BY id DESC LIMIT 1";
     $stmtId = $db->pdo->prepare($sqlObtenerId);
     $stmtId->execute([$authUser["id"], $id_externo, $titulo]);
