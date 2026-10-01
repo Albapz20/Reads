@@ -4,6 +4,8 @@ require_once "../src/Database.php";
 require_once "../src/AjustesService.php";
 require_once "../src/UserService.php";
 
+if (session_status() === PHP_SESSION_NONE) session_start();
+
 $usuario = Auth::usuario();
 if (!$usuario) { header("Location: login.php"); exit; }
 
@@ -12,20 +14,17 @@ $ajustesService = new AjustesService();
 $userService    = new UserService();
 
 // Procesar formulario de actualización del objetivo anual
-if ($_SERVER["REQUEST_METHOD"] === "POST" and isset($_POST["nuevo_objetivo"])) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["nuevo_objetivo"])) {
     $nuevoObjetivo = max(1, (int)$_POST["nuevo_objetivo"]);
-    
-    // Comprobar si el usuario ya tiene un registro en ajustes_usuario
+
     $stmtCheck = $db->pdo->prepare("SELECT id FROM ajustes_usuario WHERE usuario_id = ?");
     $stmtCheck->execute([$usuario["id"]]);
     $existe = $stmtCheck->fetchColumn();
 
     if ($existe) {
-        // Actualizar la fila existente
         $stmtOpt = $db->pdo->prepare("UPDATE ajustes_usuario SET objetivo_anual = ? WHERE usuario_id = ?");
         $stmtOpt->execute([$nuevoObjetivo, $usuario["id"]]);
     } else {
-        // Crear la primera fila
         $stmtOpt = $db->pdo->prepare("INSERT INTO ajustes_usuario (usuario_id, objetivo_anual) VALUES (?, ?)");
         $stmtOpt->execute([$usuario["id"], $nuevoObjetivo]);
     }
@@ -61,7 +60,7 @@ function obtenerPaginasPorCatalogo($tituloOriginal) {
         "metal slinger"                  => 418,
         "light wielder"                  => 400,
         "smoke and scar"                 => 420,
-        "la asistenta"                  => 336,
+        "la asistenta"                   => 336,
         "rey de la soberbia"             => 448,
         "el libro de azrael"             => 576,
         "la espada de la asesina"        => 432
@@ -73,6 +72,62 @@ function obtenerPaginasPorCatalogo($tituloOriginal) {
             return $pags;
         }
     }
+    return 0;
+}
+
+// Descarga y decodifica un JSON con timeouts cortos
+if (!function_exists('curlJson')) {
+    function curlJson(string $url): array {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_TIMEOUT        => 4,
+            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (contacto@tudominio.com)',
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        return $resp ? (json_decode($resp, true) ?: []) : [];
+    }
+}
+
+// Busca el número de páginas en Google Books y Open Library
+function buscarPaginasOnline(string $titulo, string $autores, string $libroId): int {
+    $tituloLimpio = trim(preg_replace('/\s+/', ' ', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo)));
+    $autor = trim(explode(',', $autores)[0] ?? '');
+    $tl = mb_strtolower($tituloLimpio, 'UTF-8');
+
+    // 1. Google Books por ISBN (si el libro_id lo es)
+    if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', $libroId)) {
+        $json = curlJson('https://www.googleapis.com/books/v1/volumes?q=' . urlencode('isbn:' . $libroId));
+        $p = (int)($json['items'][0]['volumeInfo']['pageCount'] ?? 0);
+        if ($p > 30) return $p;
+    }
+
+    // 2. Google Books por título + autor (validando que el título se parezca)
+    $q = 'intitle:"' . $tituloLimpio . '"' . ($autor !== '' ? ' inauthor:"' . $autor . '"' : '');
+    $json = curlJson('https://www.googleapis.com/books/v1/volumes?maxResults=5&q=' . urlencode($q));
+    foreach ($json['items'] ?? [] as $item) {
+        $p = (int)($item['volumeInfo']['pageCount'] ?? 0);
+        $t = mb_strtolower($item['volumeInfo']['title'] ?? '', 'UTF-8');
+        if ($t === '') continue;
+        similar_text($tl, $t, $pct);
+        if ($p > 30 && ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t))) return $p;
+    }
+
+    // 3. Open Library (mediana de páginas entre ediciones)
+    $params = ['title' => $tituloLimpio, 'limit' => 5, 'fields' => 'title,author_name,number_of_pages_median'];
+    if ($autor !== '') $params['author'] = $autor;
+    $json = curlJson('https://openlibrary.org/search.json?' . http_build_query($params));
+    foreach ($json['docs'] ?? [] as $doc) {
+        $p = (int)($doc['number_of_pages_median'] ?? 0);
+        $t = mb_strtolower($doc['title'] ?? '', 'UTF-8');
+        if ($t === '') continue;
+        similar_text($tl, $t, $pct);
+        if ($p > 30 && ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t))) return $p;
+    }
+
     return 0;
 }
 
@@ -102,22 +157,30 @@ $stmt = $db->pdo->prepare($sqlPaginas);
 $stmt->execute($paramsTop);
 $todosLosLibrosPeriodo = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Auto-resolver libros con 0 o 300 páginas durante la propia carga de la página
+// Auto-resolver libros con 0 o 300 páginas (catálogo manual y después búsqueda online)
+$maxConsultasOnline = 4;   // límite por carga para no ralentizar la página
+if (!isset($_SESSION['paginas_fallidas'])) $_SESSION['paginas_fallidas'] = [];
+
 foreach ($todosLosLibrosPeriodo as &$l) {
     $pags = (int)$l['paginas_reales'];
-    if ($pags === 0 or $pags === 300) {
-        $pagsAuto = obtenerPaginasPorCatalogo($l['titulo']);
-        
-        if ($pagsAuto > 0) {
-            $l['paginas_totales'] = $pagsAuto;
-            $l['paginas_leidas'] = $pagsAuto;
-            $l['paginas_reales'] = $pagsAuto;
-            
-            // Actualizar la BD en segundo plano
-            $sqlUpAuto = "UPDATE listas_lectura SET paginas_totales = ?, paginas_leidas = ? WHERE id = ?";
-            $stmtUpAuto = $db->pdo->prepare($sqlUpAuto);
-            $stmtUpAuto->execute([$pagsAuto, $pagsAuto, $l['id']]);
-        }
+    if ($pags !== 0 && $pags !== 300) continue;
+
+    // 1º catálogo manual, 2º búsqueda online
+    $pagsAuto = obtenerPaginasPorCatalogo($l['titulo']);
+
+    if ($pagsAuto === 0 && $maxConsultasOnline > 0 && empty($_SESSION['paginas_fallidas'][$l['id']])) {
+        $maxConsultasOnline--;
+        $pagsAuto = buscarPaginasOnline($l['titulo'], (string)($l['autores'] ?? ''), (string)($l['libro_id'] ?? ''));
+        if ($pagsAuto === 0) $_SESSION['paginas_fallidas'][$l['id']] = true; // no reintentar en esta sesión
+    }
+
+    if ($pagsAuto > 0 && $pagsAuto !== $pags) {
+        $l['paginas_totales'] = $pagsAuto;
+        $l['paginas_leidas']  = $pagsAuto;
+        $l['paginas_reales']  = $pagsAuto;
+
+        $db->pdo->prepare("UPDATE listas_lectura SET paginas_totales = ?, paginas_leidas = ? WHERE id = ?")
+                ->execute([$pagsAuto, $pagsAuto, $l['id']]);
     }
 }
 unset($l);
@@ -156,9 +219,9 @@ $leidosEsteAño = (int)$stmt->fetchColumn();
 
 // Porcentaje objetivo
 $objetivo = (int)($ajustes["objetivo_anual"] ?? 0);
-$porcentajeObjetivo = $objetivo > 0 ? round(($leidosEsteAño / $objetivo) * 100) : 0;
+$porcentajeObjetivo = $objetivo > 0 ? min(100, round(($leidosEsteAño / $objetivo) * 100)) : 0;
 
-// Tiempo de lectura
+// Tiempo de lectura (se calcula después de rellenar las páginas)
 $sqlTiempo = "SELECT COALESCE(SUM(GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0))), 0) FROM listas_lectura WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?";
 $stmtTiempo = $db->pdo->prepare($sqlTiempo);
 $stmtTiempo->execute([$usuario["id"], $year]);
@@ -212,7 +275,7 @@ if (!empty($estrellasLista)) {
     $estrellaComun = !empty($frecuencias) ? array_keys($frecuencias, max($frecuencias))[0] : 0;
     
     foreach ($estrellasEnteras as $val) {
-        if ($val >= 1 and $val <= 5) { 
+        if ($val >= 1 && $val <= 5) { 
             $distribucionEstrellas["{$val} ★"]++; 
         }
     }
@@ -329,10 +392,10 @@ if (!empty($estrellasLista)) {
                 <p style="color: #777; font-size: 0.88rem; padding: 10px 0;">No hay libros leídos registrados en este período.</p>
             <?php else: ?>
                 <?php 
-                $maxPaginas = !empty($topValores) and max($topValores) > 0 ? max($topValores) : 1; 
+                $maxPaginas = (!empty($topValores) && max($topValores) > 0) ? max($topValores) : 1; 
                 foreach ($topPaginas as $index => $t): 
-                    $paginasLibro = (int)($t['paginas_totales'] ?? 0);
-                    $porcentaje = ($maxPaginas > 0 and $paginasLibro > 0) ? round(($paginasLibro / $maxPaginas) * 100) : 0;
+                    $paginasLibro = (int)$t['paginas_reales'];
+                    $porcentaje = $paginasLibro > 0 ? round(($paginasLibro / $maxPaginas) * 100) : 0;
                     $posicion = $index + 1;
                 ?>
                     <div class="ranking-card pos-<?= $posicion ?>">
@@ -353,8 +416,8 @@ if (!empty($estrellasLista)) {
                                 <div class="ranking-barra-fill theme-color-bg" style="width: <?= $porcentaje ?>%;"></div>
                             </div>
 
-                            <a href="libro.php?id=<?= $t['id'] ?>" class="ranking-link">
-                            Ver detalles →
+                            <a href="libro.php?id=<?= urlencode($t['id']) ?>" class="ranking-link">
+                                Ver detalles →
                             </a>
                         </div>
                     </div>

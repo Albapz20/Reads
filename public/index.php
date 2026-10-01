@@ -98,7 +98,7 @@ $stmt = $db->pdo->prepare($sqlBiblioteca);
 $stmt->execute([$usuario["id"], $year]);
 $librosPreview = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$ultimoAutor = !empty($librosPreview[0]['autores']) ? $librosPreview[0]['autores'] : 'Elísabet Benavent';
+$ultimoAutor = $librosPreview[0]['autores'] ?? '';
 
 // Historial de búsqueda
 $sql = "SELECT termino, fecha 
@@ -699,19 +699,20 @@ function e($texto) {
         <?php endif; ?>
     </div>
 
-   <!-- Recomendados para ti -->
-    <div class="panel" style="margin-top: 25px;">
-        <div class="panel-header">
-            <h2>✨ Recomendados para ti</h2>
-        </div>
-        <p id="subtitulo-recomendados" style="font-size: 0.85rem; color: #666; margin: -5px 0 10px 0;">
-             Porque leíste a <strong><?= e($ultimoAutor) ?></strong>
-        </p>
-
-        <div id="carrusel-recomendados" class="horizontal-scroll">
-            <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
-        </div>
+<!-- Recomendados para ti -->
+<div class="panel" style="margin-top: 25px;">
+    <div class="panel-header">
+        <h2>✨ Recomendados para ti</h2>
     </div>
+
+    <p id="subtitulo-recomendados" style="font-size: 0.85rem; color: #666; margin: -5px 0 10px 0;">
+        Basado en tus últimas lecturas
+    </p>
+
+    <div id="carrusel-recomendados" class="horizontal-scroll">
+        <span style="color: #888; font-size: 0.85rem;">Cargando sugerencias...</span>
+    </div>
+</div>
 
     <!-- La comunidad está leyendo -->
     <div class="panel" style="margin-top: 25px;">
@@ -723,18 +724,7 @@ function e($texto) {
         </p>
     </div>
 
-    <!-- Novedades -->
-    <div class="panel" style="margin-top: 25px;">
-        <div class="panel-header">
-            <h2>🔥 Novedades editoriales</h2>
-        </div>
-
-        <div id="carrusel-novedades" class="horizontal-scroll">
-            <span style="color: #888; font-size: 0.85rem;">Cargando novedades...</span>
-        </div>
-    </div>
-
-    <!-- Resumen de lectura mejorado -->
+    <!-- Resumen de lectura -->
     <div class="panel" style="margin-top: 25px;">
         <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h2 style="color: var(--primary-color, inherit); margin: 0;">📈 Resumen de lectura <?= $year ?></h2>
@@ -859,12 +849,25 @@ function e($texto) {
 const input = document.querySelector('input[name="q"]');
 const sugerencias = document.getElementById('sugerencias');
 
+// Utilidad para escapar caracteres HTML y prevenir XSS
+function escapeHtml(texto) {
+    return String(texto ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
 function generarPortadaSVG(titulo) {
     const t = encodeURIComponent((titulo || 'Libro').substring(0, 30));
     return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='160' viewBox='0 0 120 160'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%231e293b;stop-opacity:1'/><stop offset='100%' style='stop-color:%230f172a;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)' rx='4'/><rect x='3' y='0' width='3' height='100%' fill='%23ffffff' opacity='0.25'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='bold' fill='%23ffffff'>${t}</text><text x='50%' y='75%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%23ffffff'>📖</text></svg>`;
 }
 
-// Buscador en tiempo real
+// Fallback de portada, al fallar la imagen se sustituye por la generada
+function fallbackPortada(img) {
+    img.onerror = null;
+    img.src = generarPortadaSVG(img.alt);
+}
+
+//Búsqueda con sugerencias en tiempo real
 if (input && sugerencias) {
     input.addEventListener('input', async () => {
         const texto = input.value.trim();
@@ -890,7 +893,7 @@ if (input && sugerencias) {
                 const autor = item.author_name ? item.author_name[0] : "Autor desconocido";
 
                 const div = document.createElement("div");
-                div.innerHTML = `<strong>${titulo}</strong><br><small style="color: #666;">${autor}</small>`;
+                div.innerHTML = `<strong>${escapeHtml(titulo)}</strong><br><small style="color: #666;">${escapeHtml(autor)}</small>`;
                 div.onclick = () => {
                     input.value = titulo;
                     sugerencias.style.display = "none";
@@ -898,7 +901,7 @@ if (input && sugerencias) {
                 };
                 sugerencias.appendChild(div);
             });
-        } catch (e) {
+        } catch (err) {
             sugerencias.style.display = "none";
         }
     });
@@ -910,7 +913,7 @@ if (input && sugerencias) {
     });
 }
 
-// Cargar Novedades Recientes directamente en tiempo real 
+// Cargar novedades recientes
 async function cargarNovedadesRecientes(contenedorId) {
     const contenedor = document.getElementById(contenedorId);
     if (!contenedor) return;
@@ -920,12 +923,11 @@ async function cargarNovedadesRecientes(contenedorId) {
     try {
         const res = await fetch('api_novedades.php');
         if (!res.ok) throw new Error("HTTP Error " + res.status);
-        
+
         const data = await res.json();
 
-        // Actualiza el título dinámicamente 
         if (tituloPanel && data.tituloSeccion) {
-            tituloPanel.innerHTML = `🔥 ${data.tituloSeccion}`;
+            tituloPanel.textContent = `🔥 ${data.tituloSeccion}`;
         }
 
         if (!data.libros || data.libros.length === 0) {
@@ -941,12 +943,12 @@ async function cargarNovedadesRecientes(contenedorId) {
             const portadaFinal = item.portada ? item.portada : generarPortadaSVG(titulo);
 
             const html = `
-                <a href="libro.php?id=${encodeURIComponent(item.id)}" class="book-card-scroll" title="${titulo}">
+                <a href="libro.php?id=${encodeURIComponent(item.id)}" class="book-card-scroll" title="${escapeHtml(titulo)}">
                     <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
-                        <img src="${portadaFinal}" alt="${titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.src=generarPortadaSVG('${titulo.replace(/'/g, "\\'")}');">
+                        <img src="${escapeHtml(portadaFinal)}" alt="${escapeHtml(titulo)}" style="width:100%; height:100%; object-fit:cover;" onerror="fallbackPortada(this)">
                     </div>
-                    <span class="title" style="display:block; margin-top:8px;">${titulo}</span>
-                    <span class="subtitle" style="display:block; color:#888;">${autor}</span>
+                    <span class="title" style="display:block; margin-top:8px;">${escapeHtml(titulo)}</span>
+                    <span class="subtitle" style="display:block; color:#888;">${escapeHtml(autor)}</span>
                 </a>
             `;
             contenedor.insertAdjacentHTML('beforeend', html);
@@ -958,59 +960,67 @@ async function cargarNovedadesRecientes(contenedorId) {
     }
 }
 
-// Inicializador principal
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof cargarNovedadesRecientes === 'function') {
-        cargarNovedadesRecientes('carrusel-novedades');
-    }
-
+// Cargar recomendaciones basadas en lecturas recientes
+async function cargarRecomendaciones() {
     const contenedorRec = document.getElementById('carrusel-recomendados');
     const subtituloRec = document.getElementById('subtitulo-recomendados');
+    if (!contenedorRec) return;
 
-    if (contenedorRec) {
-        fetch('api_recomendaciones.php')
-            .then(res => res.json())
-            .then(data => {
-                const autor = data.ultimoAutor || '';
-                const tituloUltimo = data.ultimoTitulo || '';
-                const libros = data.libros || [];
+    try {
+        const res = await fetch('api_recomendaciones.php');
+        if (!res.ok) throw new Error("HTTP Error " + res.status);
 
-                if (subtituloRec) {
-                    if (autor) {
-                        subtituloRec.innerHTML = `Porque leíste a <strong>${autor}</strong>`;
-                    } else if (tituloUltimo) {
-                        subtituloRec.innerHTML = `Porque leíste <strong>${tituloUltimo}</strong>`;
-                    } else {
-                        subtituloRec.innerHTML = `Recomendaciones para ti`;
-                    }
-                }
+        const data = await res.json();
+        const base = data.basadoEn || [];
+        const libros = data.libros || [];
 
-                if (libros.length > 0) {
-                    contenedorRec.innerHTML = '';
-                    libros.forEach(libro => {
-                        const portadaFinal = libro.portada ? libro.portada : generarPortadaSVG(libro.titulo);
-
-                        const html = `
-                            <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada || '')}" class="book-card-scroll" title="${libro.titulo}">
-                                <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
-                                    <img src="${portadaFinal}" alt="${libro.titulo}" style="width:100%; height:100%; object-fit:cover;" onerror="this.onerror=null; this.src=generarPortadaSVG('${libro.titulo.replace(/'/g, "\\'")}');">
-                                </div>
-                                <span class="title" style="display:block; margin-top:6px; font-size:0.85rem; line-height:1.2;">${libro.titulo}</span>
-                                <span class="subtitle" style="display:block; color:#888; font-size:0.75rem;">${libro.autor}</span>
-                            </a>
-                        `;
-                        contenedorRec.insertAdjacentHTML('beforeend', html);
-                    });
-                } else {
-                    contenedorRec.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No hay sugerencias disponibles en este momento.</p>";
-                }
-            })
-            .catch(err => {
-                console.error("Error al cargar sugerencias:", err);
-            });
+        // Subtítulo según los últimos libros leídos
+       if (subtituloRec) {
+    if (base.length === 0) {
+        subtituloRec.textContent = 'Marca libros como leídos para recibir recomendaciones';
+    } else {
+        const nombres = base.slice(0, 2).map(t => `<strong>${escapeHtml(t)}</strong>`);
+        const resto = base.length - 2;
+        subtituloRec.innerHTML = 'Porque leíste ' + nombres.join(' y ') +
+            (resto > 0 ? ` y ${resto} más` : '');
     }
+}
+
+        if (libros.length === 0) {
+            contenedorRec.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No hay sugerencias disponibles en este momento.</p>";
+            return;
+        }
+
+        contenedorRec.innerHTML = '';
+
+        libros.forEach(libro => {
+            const titulo = libro.titulo || 'Sin título';
+            const autor = libro.autor || 'Autor desconocido';
+            const portadaFinal = libro.portada ? libro.portada : generarPortadaSVG(titulo);
+
+            const html = `
+                <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada || '')}" class="book-card-scroll" title="${escapeHtml(titulo)}">
+                    <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
+                        <img src="${escapeHtml(portadaFinal)}" alt="${escapeHtml(titulo)}" style="width:100%; height:100%; object-fit:cover;" onerror="this.closest('a').remove()">
+                    </div>
+                    <span class="title" style="display:block; margin-top:6px; font-size:0.85rem; line-height:1.2;">${escapeHtml(titulo)}</span>
+                    <span class="subtitle" style="display:block; color:#888; font-size:0.75rem;">${escapeHtml(autor)}</span>
+                </a>
+            `;
+            contenedorRec.insertAdjacentHTML('beforeend', html);
+        });
+
+    } catch (err) {
+        console.error("Error al cargar sugerencias:", err);
+        contenedorRec.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No se pudieron cargar las sugerencias.</p>";
+    }
+}
+
+// Inicializar funciones al cargar la página
+document.addEventListener('DOMContentLoaded', () => {
+    cargarNovedadesRecientes('carrusel-novedades');
+    cargarRecomendaciones();
 });
 </script>
-
 </body>
 </html>

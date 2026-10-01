@@ -1,0 +1,104 @@
+/* ==========================================================================
+   REGLAS DE REINICIO DE EMERGENCIA
+   ========================================================================== */
+
+/* 1. Limitador global para TODAS las imágenes del proyecto */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Ninguna imagen en toda la web podrá medir más del 100% de su contenedor */
+img {
+    max-width: 100% !important;
+    height: auto !important;
+    display: block;
+}
+
+/* 2. Control estricto de las portadas dentro de cualquier tarjeta o contenedor */
+div img {
+    max-height: 200px;
+    object-fit: cover;
+}
+
+/* Tarjetas de lectura ("Qué estás leyendo ahora") */
+.reading-card, 
+.Reads-reading-hero,
+div[class*="reading"],
+div[class*="card"] {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 15px !important;
+    max-height: 140px !important;
+    overflow: hidden !important;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #e2e8f0;
+}
+
+/* Portada dentro de la tarjeta de lectura */
+.reading-card img,
+.Reads-reading-hero img,
+div[class*="reading"] img,
+div[class*="card"] img {
+    width: 70px !important;
+    min-width: 70px !important;
+    height: 100px !important;
+    max-height: 100px !important;
+    object-fit: cover !important;
+    border-radius: 6px !important;
+    flex-shrink: 0 !important;
+}
+
+/* 3. Control para la Estantería de Madera */
+.estanteria, div[class*="estanteria"] {
+    background: #8d5b4c;
+    padding: 20px 10px;
+}
+
+.libros, div[class*="libros"], div[class*="balda"] {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-end !important;
+    gap: 10px !important;
+    overflow-x: auto !important;
+    height: 150px !important;
+}
+
+.libros img, div[class*="libros"] img, .estanteria img {
+    width: 85px !important;
+    min-width: 85px !important;
+    height: 130px !important;
+    max-height: 130px !important;
+    object-fit: cover !important;
+    flex-shrink: 0 !important;
+}
+
+/* 4. Control de Gráficos (Estadísticas) */
+canvas {
+    max-width: 100% !important;
+    max-height: 220px !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    display: block !important;
+}
+
+/* 5. Menú Flotante Inferior */
+.floating-nav-container, nav[class*="float"], div[class*="nav"] {
+    position: fixed !important;
+    bottom: 15px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    z-index: 9999 !important;
+    width: 90% !important;
+    max-width: 450px !important;
+}

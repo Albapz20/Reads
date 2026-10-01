@@ -23,7 +23,7 @@ class ListaService {
     }
 
     // Añadir libro a una lista
-    public function agregarLibro($usuario_id, $libro_id, $titulo, $portada, $estado) {
+    public function agregarLibro($usuario_id, $libro_id, $titulo, $portada, $estado, $autorExterno = '', $fechaFin = null) {
 
         // Si ya existe, actualizamos el estado
         $sqlCheck = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?)";
@@ -47,51 +47,69 @@ class ListaService {
         $publicado = "";
 
         if (!empty($libro_id)) {
-            $apiUrl = "https://www.googleapis.com/books/v1/volumes/" . urlencode($libro_id);
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $apiUrl,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-                CURLOPT_TIMEOUT => 3,
-                CURLOPT_USERAGENT => 'Mozilla/5.0'
-            ]);
-            $json = curl_exec($ch);
-            curl_close($ch);
+    if (preg_match('/^[0-9]{9}[0-9X]$|^[0-9]{13}$/i', (string)$libro_id)) {
+        $apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:" . urlencode($libro_id);
+        $esBusqueda = true;
+    } elseif (str_starts_with((string)$libro_id, 'gr_')) {
+        $apiUrl = null;   // id inventado en la importación: no existe en Google Books
+        $esBusqueda = false;
+    } else {
+        $apiUrl = "https://www.googleapis.com/books/v1/volumes/" . urlencode($libro_id);
+        $esBusqueda = false;
+    }
 
-            if ($json) {
-                $data = json_decode($json, true);
-                if (isset($data["volumeInfo"])) {
-                    $info = $data["volumeInfo"];
-                    $paginas_totales = $info["pageCount"] ?? 0;
-                    $autores = isset($info["authors"]) ? implode(", ", $info["authors"]) : "";
-                    $descripcion = $info["description"] ?? "";
-                    $categorias = isset($info["categories"]) ? implode(", ", $info["categories"]) : "";
-                    $publicado = $info["publishedDate"] ?? "";
-                }
+    if ($apiUrl) {
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $apiUrl,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_TIMEOUT => 3,
+            CURLOPT_USERAGENT => 'Mozilla/5.0'
+        ]);
+        $json = curl_exec($ch);
+        curl_close($ch);
+
+        if ($json) {
+            $data = json_decode($json, true);
+            if ($esBusqueda) $data = $data['items'][0] ?? [];
+            if (isset($data["volumeInfo"])) {
+                $info = $data["volumeInfo"];
+                $paginas_totales = $info["pageCount"] ?? 0;
+                $autores = isset($info["authors"]) ? implode(", ", $info["authors"]) : "";
+                $descripcion = $info["description"] ?? "";
+                $categorias = isset($info["categories"]) ? implode(", ", $info["categories"]) : "";
+                $publicado = $info["publishedDate"] ?? "";
             }
         }
+    }
+}
 
+// Si la API no dio autor, usar el que venga del CSV
+if ($autores === "" && $autorExterno !== "" && $autorExterno !== "Autor desconocido") {
+    $autores = $autorExterno;
+}
         // Insertar libro
         $sqlInsert = "INSERT INTO listas_lectura 
-                      (usuario_id, libro_id, titulo, portada, estado, fecha,
-                       paginas_totales, paginas_leidas, autores, descripcion, categorias, publicado)
-                      VALUES (?, ?, ?, ?, ?, NOW(), ?, 0, ?, ?, ?, ?)";
+              (usuario_id, libro_id, titulo, portada, estado, fecha, fecha_fin,
+               paginas_totales, paginas_leidas, autores, descripcion, categorias, publicado)
+              VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, 0, ?, ?, ?, ?)";
 
-        $stmtInsert = $this->db->pdo->prepare($sqlInsert);
-        return $stmtInsert->execute([
-            $usuario_id,
-            $libro_id,
-            $titulo,
-            $portada,
-            $estado,
-            $paginas_totales,
-            $autores,
-            $descripcion,
-            $categorias,
-            $publicado
-        ]);
+$stmtInsert = $this->db->pdo->prepare($sqlInsert);
+return $stmtInsert->execute([
+    $usuario_id,
+    $libro_id,
+    $titulo,
+    $portada,
+    $estado,
+    $fechaFin,
+    $paginas_totales,
+    $autores,
+    $descripcion,
+    $categorias,
+    $publicado
+]);
     }
 
     // Cambiar estado

@@ -72,16 +72,16 @@ if (!$libroAPI) {
 $paginasTotalesAPI = 0;
 $proveedor = "google_books";
 
-// Tratamiento de datos según la fuente 
+// Tratamiento de datos según la fuente
 if (isset($libroAPI["volumeInfo"])) {
-    // ---- GOOGLE BOOKS  ----
+    // ---- GOOGLE BOOKS ----
     $info = $libroAPI["volumeInfo"];
     $titulo = $info["title"] ?? "Sin título";
     $autor = isset($info["authors"]) ? implode(", ", $info["authors"]) : "Autor desconocido";
-    
+
     $images = $info["imageLinks"] ?? [];
     $portada = $images["extraLarge"] ?? $images["large"] ?? $images["medium"] ?? $images["thumbnail"] ?? $images["smallThumbnail"] ?? "";
-    
+
     if (!empty($portada)) {
         $portada = str_replace("http://", "https://", $portada);
     } else {
@@ -95,7 +95,7 @@ if (isset($libroAPI["volumeInfo"])) {
     // ---- OPEN LIBRARY ----
     $proveedor = "open_library";
     $titulo = $libroAPI["title"] ?? "Sin título";
-    
+
     if (isset($libroAPI["author_name"]) && is_array($libroAPI["author_name"])) {
         $autor = implode(", ", $libroAPI["author_name"]);
     } else {
@@ -104,7 +104,6 @@ if (isset($libroAPI["volumeInfo"])) {
 
     $descripcion = $libroAPI["description"] ?? "Sin descripción disponible.";
 
-    // Lógica de Portada
     if (!empty($libroAPI["portada"])) {
         $portada = $libroAPI["portada"];
     } elseif (isset($libroAPI["covers"][0]) && is_numeric($libroAPI["covers"][0])) {
@@ -119,15 +118,63 @@ if (isset($libroAPI["volumeInfo"])) {
     $paginasTotalesAPI = (int)($libroAPI["number_of_pages"] ?? 0);
 }
 
-// Prioridad: Si viene por URL
+// La descripción puede venir como array en Open Library
+if (is_array($descripcion)) {
+    $descripcion = $descripcion["value"] ?? "Sin descripción disponible.";
+}
+
+// Prioridad: si viene por URL
 if (!empty($descripcionURL)) {
     $descripcion = $descripcionURL;
 }
 
-// Descripción y portada fallback con Google Books API si no hay datos
+// Función auxiliar para consultar APIs que devuelven JSON
+if (!function_exists('lbJson')) {
+    function lbJson(string $url): array {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (contacto@tudominio.com)',
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        return $resp ? (json_decode($resp, true) ?: []) : [];
+    }
+}
+$sinDesc = function ($d) {
+    return trim((string)$d) === '' || $d === "Sin descripción disponible.";
+};
+
+// Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
+if ($sinDesc($descripcion)) {
+    $consultas = [
+        ["SELECT descripcion FROM libros WHERE libro_id = ? LIMIT 1", [$id_externo]],
+        ["SELECT descripcion FROM libros WHERE id = ? LIMIT 1", [$id_externo]],
+        ["SELECT descripcion FROM libros WHERE titulo = ? LIMIT 1", [$titulo]],
+        ["SELECT descripcion FROM listas_lectura
+          WHERE (libro_id = ? OR titulo = ?) AND descripcion IS NOT NULL AND descripcion <> ''
+          ORDER BY CHAR_LENGTH(descripcion) DESC LIMIT 1", [$id_externo, $titulo]],
+    ];
+    foreach ($consultas as [$sqlD, $paramsD]) {
+        try {
+            $stD = $db->pdo->prepare($sqlD);
+            if (!$stD) continue;               // p. ej. la columna no existe
+            $stD->execute($paramsD);
+            $d = $stD->fetchColumn();
+            if (!$sinDesc($d)) { $descripcion = $d; break; }
+        } catch (Throwable $e) {
+            // probar la siguiente consulta
+        }
+    }
+}
+
+// Descripción y portada de rescate con Google Books
 if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false) {
-    
-    $apiKey = "AIzaSyBWAS9W-oky5pAt-GlDDSUCv5KEraFA7qI"; 
+
+    $apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: ''; // aun por definir la apikey
 
     $tituloLimpio = trim(explode('/', $titulo)[0]);
     $tituloLimpio = trim(explode('-', $tituloLimpio)[0]);
@@ -140,8 +187,10 @@ if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible."
     $intentos[] = $tituloLimpio;
 
     foreach ($intentos as $query) {
-        $urlAPI = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode(trim($query)) . "&key={$apiKey}&langRestrict=es&maxResults=1";
-        
+        $urlAPI = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode(trim($query))
+                . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '')
+                . "&langRestrict=es&maxResults=1";
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $urlAPI,
@@ -151,19 +200,19 @@ if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible."
             CURLOPT_TIMEOUT => 5,
             CURLOPT_USERAGENT => 'Mozilla/5.0'
         ]);
-        
+
         $json = curl_exec($ch);
         curl_close($ch);
 
         if ($json) {
             $dataGB = json_decode($json, true);
             $item = $dataGB["items"][0]["volumeInfo"] ?? null;
-            
+
             if ($item) {
                 if (!empty($item["description"]) && ($descripcion === "Sin descripción disponible." || empty(trim($descripcion)))) {
                     $descripcion = $item["description"];
                 }
-                
+
                 if (strpos($portada, 'placehold.co') !== false && !empty($item["imageLinks"])) {
                     $imgRescate = $item["imageLinks"]["thumbnail"] ?? $item["imageLinks"]["smallThumbnail"] ?? "";
                     if (!empty($imgRescate)) {
@@ -175,7 +224,22 @@ if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible."
     }
 }
 
-// Fallback final
+// Otro rescate de descripción desde Open Library si aún no se tiene
+if ($sinDesc($descripcion)) {
+    $tOL = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
+    $qOL = ['title' => $tOL, 'limit' => 3, 'fields' => 'key,title,author_name'];
+    if ($autor !== "Autor desconocido") $qOL['author'] = trim(explode(',', $autor)[0]);
+
+    $resOL = lbJson('https://openlibrary.org/search.json?' . http_build_query($qOL));
+    foreach ($resOL['docs'] ?? [] as $docOL) {
+        if (empty($docOL['key'])) continue;
+        $work = lbJson('https://openlibrary.org' . $docOL['key'] . '.json');
+        $dOL = $work['description'] ?? '';
+        if (is_array($dOL)) $dOL = $dOL['value'] ?? '';
+        if (trim((string)$dOL) !== '') { $descripcion = $dOL; break; }
+    }
+}
+
 if (empty(trim($descripcion))) {
     $descripcion = "Sin descripción disponible.";
 }
@@ -183,11 +247,9 @@ if (empty(trim($descripcion))) {
 // Procesamiento de estado y páginas si el usuario está autenticado
 if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUser) {
     $estado = trim($_POST["accion"]);
-    
-    // Añade o actualiza el registro base
+
     $listaService->agregarLibro($authUser["id"], $id_externo, $titulo, $portada, $estado);
-    
-    // Busca la ID generada y asegura el estado / fechas / páginas
+
     $sqlObtenerId = "SELECT id FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) ORDER BY id DESC LIMIT 1";
     $stmtId = $db->pdo->prepare($sqlObtenerId);
     $stmtId->execute([$authUser["id"], $id_externo, $titulo]);
@@ -206,439 +268,384 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// Obtener estado actual del libro para el usuario autenticado
+// Datos del usuario sobre este libro 
 $estadoActual = null;
+$libroUser = null;
+$puntuacionUsuario = null;
 if ($authUser) {
-    $sqlEstado = "SELECT estado FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1";
-    $stmtEstado = $db->pdo->prepare($sqlEstado);
-    $stmtEstado->execute([$authUser["id"], $id_externo, $titulo]);
-    $resEstado = $stmtEstado->fetch(PDO::FETCH_ASSOC);
-    if ($resEstado) {
-        $estadoActual = $resEstado["estado"];
-    }
-}
-?>
+    $stmt = $db->pdo->prepare("SELECT * FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1");
+    $stmt->execute([$authUser["id"], $id_externo, $titulo]);
+    $libroUser = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($libroUser) $estadoActual = $libroUser["estado"];
 
+    $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
+}
+
+$paginasTotales = $libroUser ? (int)$libroUser["paginas_totales"] : 0;
+$paginasLeidas  = $libroUser ? (int)$libroUser["paginas_leidas"] : 0;
+$progreso = 0;
+if ($libroUser) {
+    $progreso = $paginasTotales > 0 ? round(($paginasLeidas / $paginasTotales) * 100) : (int)($libroUser["progreso"] ?? 0);
+}
+$paginasMostrar = $paginasTotales > 0 ? $paginasTotales : $paginasTotalesAPI;
+
+$reseñas = $reviewService->obtenerReseñas($id_externo);
+$medias  = $ratingService->obtenerMedias($id_externo);
+
+$portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
+
+$estados = [
+    'guardado'   => ['🎁', 'Wishlist'],
+    'tbr'        => ['🎯', 'TBR'],
+    'leyendo'    => ['📖', 'Leyendo'],
+    'leido'      => ['✅', 'Leído'],
+    'abandonado' => ['❌', 'Abandonado'],
+];
+
+$metricas = [
+    'estrellas'  => ['⭐', 'General',           'estrellas',  '★'],
+    'romance'    => ['💖', 'Romance',           'romance',    '💖'],
+    'spicy'      => ['🌶️', 'Spicy',             'spicy',      '🌶️'],
+    'lagrimas'   => ['💧', 'Lágrimas / Drama',  'lagrimas',   '💧'],
+    'plot_twist' => ['⚡', 'Plot Twist',        'plot_twist', '⚡'],
+];
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($titulo) ?></title>
-    <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
     <script src="main.js"></script>
     <style>
-        body {
-            padding-bottom: 90px;
+        :root {
+            --lb-accent: var(--primary-color, var(--color-primario, #d87d8a));
+            --lb-border: var(--border-color, rgba(0,0,0,.09));
+            --lb-surface: var(--bg-card, #ffffff);
         }
-        
-        .acciones-estado-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: center;
-            margin-top: 10px;
-        }
+        body { padding-bottom: 100px; }
+        .lb-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
 
-        .btn-estado {
-            padding: 10px 16px;
+        /* ---- Cabecera ---- */
+        .lb-hero {
+            position: relative;
+            overflow: hidden;
+            border-radius: 22px;
+            border: 1px solid var(--lb-border);
+            background: var(--lb-surface);
+            margin-bottom: 18px;
+        }
+        .lb-hero-bg {
+            position: absolute; inset: -30px;
+            background-size: cover; background-position: center;
+            filter: blur(38px) saturate(1.3);
+            opacity: .38;
+        }
+        .lb-hero-inner {
+            position: relative;
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 32px;
+            padding: 32px;
+            align-items: start;
+        }
+        .lb-cover img {
+            width: 100%; height: auto; display: block;
             border-radius: 10px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            background: var(--color-primario, #2d5a27);
-            color: #ffffff;
-            font-size: 0.88rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
+        }
+        .lb-info h1 { margin: 0 0 6px; font-size: 2rem; line-height: 1.15; }
+        .lb-author { margin: 0 0 16px; font-size: 1.05rem; opacity: .8; }
+        .lb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+        .lb-chip {
+            padding: 5px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600;
+            background: rgba(255,255,255,.7); border: 1px solid var(--lb-border);
         }
 
-        .btn-estado:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            opacity: 0.95;
+        /* ---- Selector de estado ---- */
+        .lb-estado-label { font-size: .85rem; font-weight: 700; margin-bottom: 8px; display: block; opacity: .75; }
+        .lb-estados { display: flex; flex-wrap: wrap; gap: 8px; }
+        .lb-estados button {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 16px; border-radius: 999px;
+            border: 1px solid var(--lb-border);
+            background: rgba(255,255,255,.85);
+            color: inherit; font: inherit; font-size: .88rem; font-weight: 600;
+            cursor: pointer; transition: background .15s, color .15s, border-color .15s;
         }
+        .lb-estados button:hover { border-color: var(--lb-accent); }
+        .lb-estados button:focus-visible { outline: 3px solid var(--lb-accent); outline-offset: 2px; }
+        .lb-estados button.active { background: var(--lb-accent); border-color: var(--lb-accent); color: #fff; }
+        .lb-login-hint { font-size: .9rem; opacity: .8; }
+        .lb-login-hint a { color: var(--lb-accent); font-weight: 700; }
 
-        .btn-estado.active {
-            background: #1b3818;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-            border: 2px solid #ffffff;
-            font-weight: 800;
+        /* ---- Secciones ---- */
+        .lb-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; align-items: start; }
+        .lb-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+        .lb-card {
+            background: var(--lb-surface);
+            border: 1px solid var(--lb-border);
+            border-radius: 16px;
+            padding: 22px;
         }
+        .lb-card h2 { margin: 0 0 14px; font-size: 1.15rem; }
 
-        /* BARRA FLOTANTE */
-        .floating-nav-container {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            width: calc(100% - 40px);
-            max-width: 600px;
-        }
+        .lb-desc { line-height: 1.65; margin: 0; }
+        .lb-desc { color: var(--text-color, inherit); white-space: normal; word-wrap: break-word; }
+        .lb-desc.clamp { max-height: 10.5em; overflow: hidden; }
+        .lb-more { margin-top: 10px; background: none; border: none; padding: 0; color: var(--lb-accent); font: inherit; font-weight: 700; cursor: pointer; }
 
-        .quick-nav-floating {
-            display: flex;
-            align-items: center;
-            justify-content: space-around;
-            padding: 8px 12px;
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-        }
+        /* Progreso */
+        .lb-prog-num { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+        .lb-prog-num strong { font-size: 1.6rem; }
+        .lb-bar { height: 10px; border-radius: 10px; background: rgba(0,0,0,.08); overflow: hidden; }
+        .lb-bar > div { height: 100%; background: var(--lb-accent); border-radius: 10px; }
+        .lb-link { display: inline-block; margin-top: 14px; color: var(--lb-accent); font-weight: 700; text-decoration: none; }
+        .lb-link:hover { text-decoration: underline; }
 
-        .nav-card-float {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 6px 12px;
-            text-decoration: none;
-            color: #2d3748;
-            font-weight: 600;
-            font-size: 0.8rem;
-            border-radius: 12px;
-            transition: all 0.2s ease;
+        /* Puntuación */
+        .lb-rate { display: flex; flex-direction: column; gap: 14px; }
+        .lb-rate-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .lb-rate-row label { font-weight: 700; font-size: .92rem; }
+        .icon-selector { display: flex; gap: 4px; cursor: pointer; font-size: 1.6rem; user-select: none; }
+        .lb-btn {
+            width: 100%; margin-top: 6px; padding: 11px; border: none; border-radius: 12px;
+            background: var(--lb-accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer;
         }
+        .lb-btn:hover { opacity: .92; }
 
-        .nav-card-float:hover {
-            color: var(--color-primario, #2d5a27);
-            transform: translateY(-2px);
+        /* Reseñas */
+        .lb-card textarea {
+            width: 100%; box-sizing: border-box; padding: 12px; border-radius: 12px;
+            border: 1px solid var(--lb-border); font: inherit; resize: vertical; margin-bottom: 10px;
         }
+        .lb-review { padding: 14px 0; border-top: 1px solid var(--lb-border); }
+        .lb-review:first-of-type { border-top: none; padding-top: 0; }
+        .lb-review strong { display: block; margin-bottom: 4px; }
+        .lb-empty { margin: 0; opacity: .65; }
 
-        .nav-card-float .nav-icon {
-            font-size: 1.25rem;
-            margin-bottom: 2px;
+        /* Comunidad */
+        .lb-media-row { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--lb-border); font-size: .92rem; }
+        .lb-media-row:first-of-type { border-top: none; }
+        .star.full, .star.half { color: #f5b301; }
+        .star.empty { color: #d5d5d5; }
+        .lb-stars-big { font-size: 1.5rem; margin-bottom: 8px; }
+
+        /* Barra inferior */
+        .floating-nav-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: calc(100% - 40px); max-width: 600px; }
+        .quick-nav-floating { display: flex; align-items: center; justify-content: space-around; padding: 8px 12px; background: rgba(255,255,255,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.6); border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
+        .nav-card-float { display: flex; flex-direction: column; align-items: center; padding: 6px 12px; text-decoration: none; color: #2d3748; font-weight: 600; font-size: .8rem; border-radius: 12px; transition: color .2s, transform .2s; }
+        .nav-card-float:hover { color: var(--lb-accent); transform: translateY(-2px); }
+        .nav-card-float .nav-icon { font-size: 1.25rem; margin-bottom: 2px; }
+
+        /* ---- Móvil ---- */
+        @media (max-width: 820px) {
+            .lb-grid { grid-template-columns: 1fr; }
+            .lb-hero-inner { grid-template-columns: 1fr; padding: 24px 18px; text-align: center; justify-items: center; }
+            .lb-cover { width: 170px; }
+            .lb-info h1 { font-size: 1.6rem; }
+            .lb-chips, .lb-estados { justify-content: center; }
         }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
 </head>
 
 <body>
+<div class="lb-wrap">
 
-<div class="container">
+    <!-- Cabecera -->
+    <header class="lb-hero">
+        <div class="lb-hero-bg" style="background-image: url('<?= htmlspecialchars($portadaCss) ?>');"></div>
+        <div class="lb-hero-inner">
+            <div class="lb-cover">
+                <img src="<?= htmlspecialchars($portada) ?>"
+                     alt="Portada de <?= htmlspecialchars($titulo) ?>"
+                     onerror="this.onerror=null; this.src='https://placehold.co/350x500/e2e8f0/1e293b?text=Sin+Portada';">
+            </div>
 
-    <div class="panel">
-        <div class="libro-header">
-            <img src="<?= htmlspecialchars($portada) ?>" 
-                 alt="Portada de <?= htmlspecialchars($titulo) ?>" 
-                 class="img-fluid rounded shadow"
-                 style="max-width: 250px; height: auto;"
-                 onerror="this.onerror=null; this.src='https://placehold.co/350x500/e2e8f0/1e293b?text=Sin+Portada';" />
-
-            <div class="libro-info">
+            <div class="lb-info">
                 <h1><?= htmlspecialchars($titulo) ?></h1>
-                <p><strong>Autor:</strong> <?= htmlspecialchars($autor) ?></p>
-            </div>
-        </div>
-    </div>
+                <p class="lb-author"><?= htmlspecialchars($autor) ?></p>
 
-    <!-- Sección de estado de lectura -->
-    <?php if ($authUser): ?>
-    <div class="panel">
-        <div class="panel-header">
-            <h2>📌 Estado de lectura</h2>
-        </div>
-
-        <div class="acciones-estado-grid">
-            <form method="POST" style="display: inline;">
-                <input type="hidden" name="accion" value="guardado">
-                <button type="submit" class="btn-estado <?= ($estadoActual === 'guardado') ? 'active' : '' ?>">
-                    🎁 Wishlist
-                </button>
-            </form>
-
-            <form method="POST" style="display: inline;">
-                <input type="hidden" name="accion" value="tbr">
-                <button type="submit" class="btn-estado <?= ($estadoActual === 'tbr') ? 'active' : '' ?>">
-                    🎯 TBR
-                </button>
-            </form>
-
-            <form method="POST" style="display: inline;">
-                <input type="hidden" name="accion" value="leyendo">
-                <button type="submit" class="btn-estado <?= ($estadoActual === 'leyendo') ? 'active' : '' ?>">
-                    📖 Estoy leyendo
-                </button>
-            </form>
-
-            <form method="POST" style="display: inline;">
-                <input type="hidden" name="accion" value="leido">
-                <button type="submit" class="btn-estado <?= ($estadoActual === 'leido') ? 'active' : '' ?>">
-                    ✅ Marcar como leído
-                </button>
-            </form>
-
-            <form method="POST" style="display: inline;">
-                <input type="hidden" name="accion" value="abandonado">
-                <button type="submit" class="btn-estado <?= ($estadoActual === 'abandonado') ? 'active' : '' ?>">
-                    ❌ Abandonar
-                </button>
-            </form>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Descripción</h2>
-        </div>
-        <p><?= nl2br(strip_tags($descripcion)) ?></p>
-    </div>
-
-    <?php
-    if ($authUser) {
-        $sql = "SELECT * FROM listas_lectura WHERE titulo = ? AND usuario_id = ?";
-        $stmt = $db->pdo->prepare($sql);
-        $stmt->execute([$titulo, $authUser["id"]]);
-        $libroUser = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($libroUser) {
-            $paginasTotales = (int)$libroUser["paginas_totales"];
-            $paginasLeidas  = (int)$libroUser["paginas_leidas"];
-            $progreso = $paginasTotales > 0 ? round(($paginasLeidas / $paginasTotales) * 100) : $libroUser["progreso"];
-    ?>
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Tu progreso</h2>
-        </div>
-
-        <div class="review-card">
-            <p><strong>Páginas leídas:</strong> <?= $paginasLeidas ?></p>
-            <p><strong>Páginas totales:</strong> <?= $paginasTotales ?></p>
-            <p><strong>Progreso:</strong> <?= $progreso ?>%</p>
-
-            <div class="barra-progreso">
-                <div class="barra-progreso-inner" style="width: <?= $progreso ?>%"></div>
-            </div>
-        </div>
-
-        <a href="editar_libro.php?id=<?= $libroUser["id"] ?>" class="submit-btn">✏️ Editar progreso</a>
-    </div>
-    <?php
-        }
-    }
-    ?>
-
-    <?php if ($authUser): ?>
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Escribe una reseña</h2>
-        </div>
-
-        <form action="guardar_reseña.php" method="POST">
-            <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
-            <textarea name="contenido" rows="5" placeholder="Escribe tu reseña..." required></textarea><br>
-            <button type="submit" class="submit-btn">Guardar reseña</button>
-        </form>
-    </div>
-    <?php endif; ?>
-
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Reseñas</h2>
-        </div>
-
-        <?php
-        $reseñas = $reviewService->obtenerReseñas($id_externo);
-
-        if (count($reseñas) === 0):
-        ?>
-            <p>No hay reseñas todavía.</p>
-        <?php else: ?>
-            <?php foreach ($reseñas as $r): ?>
-                <div class="review-card">
-                    <strong><?= htmlspecialchars($r['nombre']) ?></strong><br>
-                    <?= nl2br(htmlspecialchars($r['contenido'])) ?>
+                <?php if ($paginasMostrar > 0 || $idioma !== ''): ?>
+                <div class="lb-chips">
+                    <?php if ($paginasMostrar > 0): ?><span class="lb-chip"><?= number_format($paginasMostrar, 0, '', '.') ?> páginas</span><?php endif; ?>
+                    <?php if ($idioma !== ''): ?><span class="lb-chip"><?= htmlspecialchars(strtoupper($idioma)) ?></span><?php endif; ?>
+                    <?php if ($medias && $medias["media_estrellas"] !== null): ?><span class="lb-chip">★ <?= round($medias["media_estrellas"], 1) ?> de la comunidad</span><?php endif; ?>
                 </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
-    </div>
+                <?php endif; ?>
 
-    <?php
-    $puntuacionUsuario = null;
-    if ($authUser) {
-        $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
-    }
-    ?>
-    
-    <?php if ($authUser): ?>
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Puntuación</h2>
+                <?php if ($authUser): ?>
+                    <span class="lb-estado-label">¿En qué punto estás con este libro?</span>
+                    <form method="POST" class="lb-estados">
+                        <?php foreach ($estados as $clave => [$icono, $nombre]): ?>
+                            <button type="submit" name="accion" value="<?= $clave ?>" class="<?= $estadoActual === $clave ? 'active' : '' ?>">
+                                <span><?= $icono ?></span> <?= $nombre ?>
+                            </button>
+                        <?php endforeach; ?>
+                    </form>
+                <?php else: ?>
+                    <p class="lb-login-hint"><a href="login.php">Inicia sesión</a> para guardar este libro, puntuarlo y escribir reseñas.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+    </header>
+
+    <div class="lb-grid">
+
+        <!-- Columna principal -->
+        <div class="lb-col">
+
+            <section class="lb-card">
+                <h2>Sobre este libro</h2>
+                <?php $descLimpia = strip_tags($descripcion); ?>
+                <p class="lb-desc <?= mb_strlen($descLimpia) > 550 ? 'clamp' : '' ?>" id="descTexto"><?= nl2br(htmlspecialchars($descLimpia, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) ?></p>
+                <?php if (mb_strlen($descLimpia) > 550): ?>
+                    <button type="button" class="lb-more" id="descBtn">Leer más</button>
+                <?php endif; ?>
+            </section>
+
+            <?php if ($authUser): ?>
+            <section class="lb-card">
+                <h2>Tu reseña</h2>
+                <form action="guardar_reseña.php" method="POST">
+                    <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
+                    <textarea name="contenido" rows="4" placeholder="¿Qué te ha parecido?" required></textarea>
+                    <button type="submit" class="lb-btn" style="width:auto; padding:10px 22px;">Guardar reseña</button>
+                </form>
+            </section>
+            <?php endif; ?>
+
+            <section class="lb-card">
+                <h2>Reseñas de la comunidad</h2>
+                <?php if (count($reseñas) === 0): ?>
+                    <p class="lb-empty">Todavía no hay reseñas. Sé la primera persona en escribir una.</p>
+                <?php else: ?>
+                    <?php foreach ($reseñas as $r): ?>
+                        <div class="lb-review">
+                            <strong><?= htmlspecialchars($r['nombre']) ?></strong>
+                            <?= nl2br(htmlspecialchars($r['contenido'])) ?>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </section>
         </div>
 
-        <form action="guardar_puntuacion.php" method="POST" id="formPuntuacion">
-            <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
+        <!-- Columna lateral -->
+        <aside class="lb-col">
 
-            <div class="rating-row" style="margin-bottom: 15px;">
-                <label style="display:block; font-weight:bold; margin-bottom: 5px;">
-                    ⭐ General: <span id="val-estrellas"><?= $puntuacionUsuario['estrellas'] ?? 0 ?></span> / 5
-                </label>
-                <div class="icon-selector" data-target="input-estrellas" data-label="val-estrellas" style="cursor: pointer; font-size: 1.8rem; display: flex; gap: 5px;">
-                    <span data-val="1">★</span><span data-val="2">★</span><span data-val="3">★</span><span data-val="4">★</span><span data-val="5">★</span>
+            <?php if ($authUser && $libroUser): ?>
+            <section class="lb-card">
+                <h2>Tu progreso</h2>
+                <div class="lb-prog-num">
+                    <strong><?= $progreso ?>%</strong>
+                    <span><?= $paginasLeidas ?> / <?= $paginasTotales ?> págs.</span>
                 </div>
-                <input type="hidden" name="estrellas" id="input-estrellas" value="<?= $puntuacionUsuario['estrellas'] ?? 0 ?>">
-            </div>
+                <div class="lb-bar"><div style="width: <?= (int)$progreso ?>%"></div></div>
+                <a href="editar_libro.php?id=<?= (int)$libroUser["id"] ?>" class="lb-link">✏️ Editar progreso</a>
+            </section>
+            <?php endif; ?>
 
-            <div class="rating-row" style="margin-bottom: 15px;">
-                <label style="display:block; font-weight:bold; margin-bottom: 5px;">
-                    💖 Romance: <span id="val-romance"><?= $puntuacionUsuario['romance'] ?? 0 ?></span> / 5
-                </label>
-                <div class="icon-selector" data-target="input-romance" data-label="val-romance" style="cursor: pointer; font-size: 1.8rem; display: flex; gap: 5px;">
-                    <span data-val="1">💖</span><span data-val="2">💖</span><span data-val="3">💖</span><span data-val="4">💖</span><span data-val="5">💖</span>
-                </div>
-                <input type="hidden" name="romance" id="input-romance" value="<?= $puntuacionUsuario['romance'] ?? 0 ?>">
-            </div>
+            <?php if ($authUser): ?>
+            <section class="lb-card">
+                <h2>Tu puntuación</h2>
+                <form action="guardar_puntuacion.php" method="POST" class="lb-rate">
+                    <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
 
-            <div class="rating-row" style="margin-bottom: 15px;">
-                <label style="display:block; font-weight:bold; margin-bottom: 5px;">
-                    🌶️ Spicy: <span id="val-spicy"><?= $puntuacionUsuario['spicy'] ?? 0 ?></span> / 5
-                </label>
-                <div class="icon-selector" data-target="input-spicy" data-label="val-spicy" style="cursor: pointer; font-size: 1.8rem; display: flex; gap: 5px;">
-                    <span data-val="1">🌶️</span><span data-val="2">🌶️</span><span data-val="3">🌶️</span><span data-val="4">🌶️</span><span data-val="5">🌶️</span>
-                </div>
-                <input type="hidden" name="spicy" id="input-spicy" value="<?= $puntuacionUsuario['spicy'] ?? 0 ?>">
-            </div>
+                    <?php foreach ($metricas as $clave => [$emoji, $nombre, $campo, $icono]):
+                        $valor = $puntuacionUsuario[$campo] ?? 0; ?>
+                        <div class="lb-rate-row">
+                            <label><?= $emoji ?> <?= $nombre ?>: <span id="val-<?= $campo ?>"><?= $valor ?></span>/5</label>
+                            <div class="icon-selector" data-target="input-<?= $campo ?>" data-label="val-<?= $campo ?>">
+                                <?php for ($i = 1; $i <= 5; $i++): ?><span data-val="<?= $i ?>"><?= $icono ?></span><?php endfor; ?>
+                            </div>
+                            <input type="hidden" name="<?= $campo ?>" id="input-<?= $campo ?>" value="<?= $valor ?>">
+                        </div>
+                    <?php endforeach; ?>
 
-            <div class="rating-row" style="margin-bottom: 15px;">
-                <label style="display:block; font-weight:bold; margin-bottom: 5px;">
-                    💧 Lágrimas / Drama: <span id="val-lagrimas"><?= $puntuacionUsuario['lagrimas'] ?? 0 ?></span> / 5
-                </label>
-                <div class="icon-selector" data-target="input-lagrimas" data-label="val-lagrimas" style="cursor: pointer; font-size: 1.8rem; display: flex; gap: 5px;">
-                    <span data-val="1">💧</span><span data-val="2">💧</span><span data-val="3">💧</span><span data-val="4">💧</span><span data-val="5">💧</span>
-                </div>
-                <input type="hidden" name="lagrimas" id="input-lagrimas" value="<?= $puntuacionUsuario['lagrimas'] ?? 0 ?>">
-            </div>
+                    <button type="submit" class="lb-btn">Guardar puntuación</button>
+                </form>
+            </section>
+            <?php endif; ?>
 
-            <div class="rating-row" style="margin-bottom: 20px;">
-                <label style="display:block; font-weight:bold; margin-bottom: 5px;">
-                    ⚡ Plot Twist: <span id="val-plot_twist"><?= $puntuacionUsuario['plot_twist'] ?? 0 ?></span> / 5
-                </label>
-                <div class="icon-selector" data-target="input-plot_twist" data-label="val-plot_twist" style="cursor: pointer; font-size: 1.8rem; display: flex; gap: 5px;">
-                    <span data-val="1">⚡</span><span data-val="2">⚡</span><span data-val="3">⚡</span><span data-val="4">⚡</span><span data-val="5">⚡</span>
-                </div>
-                <input type="hidden" name="plot_twist" id="input-plot_twist" value="<?= $puntuacionUsuario['plot_twist'] ?? 0 ?>">
-            </div>
-
-            <button type="submit" class="submit-btn">Guardar puntuación</button>
-        </form>
+            <section class="lb-card">
+                <h2>Media de la comunidad</h2>
+                <?php if ($medias && $medias["media_estrellas"] !== null): ?>
+                    <div class="lb-stars-big"><?= renderStars(round($medias["media_estrellas"], 1)) ?></div>
+                    <div class="lb-media-row"><span>⭐ General</span><strong><?= round($medias["media_estrellas"], 1) ?> / 5</strong></div>
+                    <div class="lb-media-row"><span>💖 Romance</span><strong><?= round($medias["media_romance"] ?? 0, 1) ?> / 5</strong></div>
+                    <div class="lb-media-row"><span>🌶️ Spicy</span><strong><?= round($medias["media_spicy"] ?? 0, 1) ?> / 5</strong></div>
+                    <div class="lb-media-row"><span>💧 Lágrimas</span><strong><?= round($medias["media_lagrimas"] ?? 0, 1) ?> / 5</strong></div>
+                    <div class="lb-media-row"><span>⚡ Plot Twist</span><strong><?= round($medias["media_plot_twist"] ?? 0, 1) ?> / 5</strong></div>
+                <?php else: ?>
+                    <p class="lb-empty">Aún no hay puntuaciones.</p>
+                <?php endif; ?>
+            </section>
+        </aside>
     </div>
-
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.icon-selector').forEach(container => {
-            const inputId = container.dataset.target;
-            const labelId = container.dataset.label;
-            const input = document.getElementById(inputId);
-            const label = document.getElementById(labelId);
-
-            let currentVal = parseFloat(input.value) || 0;
-            updateVisuals(container, currentVal);
-
-            container.querySelectorAll('span').forEach(icon => {
-                icon.addEventListener('click', (e) => {
-                    const rect = icon.getBoundingClientRect();
-                    const clickX = e.clientX - rect.left;
-                    const baseVal = parseInt(icon.dataset.val);
-                    
-                    let finalVal = (clickX < rect.width / 2) ? baseVal - 0.5 : baseVal;
-                    
-                    input.value = finalVal;
-                    if (label) label.textContent = finalVal;
-                    updateVisuals(container, finalVal);
-                });
-            });
-        });
-
-        function updateVisuals(container, val) {
-            container.querySelectorAll('span').forEach(icon => {
-                const iconVal = parseInt(icon.dataset.val);
-                if (iconVal <= val) {
-                    icon.style.opacity = '1';
-                    icon.style.filter = 'grayscale(0%)';
-                } else if (iconVal - 0.5 === val) {
-                    icon.style.opacity = '0.6';
-                    icon.style.filter = 'grayscale(30%)';
-                } else {
-                    icon.style.opacity = '0.25';
-                    icon.style.filter = 'grayscale(100%)';
-                }
-            });
-        }
-    });
-    </script>
-    <?php endif; ?>
-
-    <?php if ($puntuacionUsuario): ?>
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Tu puntuación</h2>
-        </div>
-
-        <?= renderStars($puntuacionUsuario["estrellas"] ?? 0) ?>
-        
-        <div class="metricas-resumen" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
-            <p style="margin: 0;">⭐ <strong>General:</strong> <?= $puntuacionUsuario["estrellas"] ?? 0 ?> / 5</p>
-            <p style="margin: 0;">💖 <strong>Romance:</strong> <?= $puntuacionUsuario["romance"] ?? 0 ?> / 5</p>
-            <p style="margin: 0;">🌶️ <strong>Spicy:</strong> <?= $puntuacionUsuario["spicy"] ?? 0 ?> / 5</p>
-            <p style="margin: 0;">💧 <strong>Lágrimas:</strong> <?= $puntuacionUsuario["lagrimas"] ?? 0 ?> / 5</p>
-            <p style="margin: 0;">⚡ <strong>Plot Twist:</strong> <?= $puntuacionUsuario["plot_twist"] ?? 0 ?> / 5</p>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <?php $medias = $ratingService->obtenerMedias($id_externo); ?>
-
-    <div class="panel">
-        <div class="panel-header">
-            <h2>Media global de la comunidad</h2>
-        </div>
-
-        <?php if ($medias && $medias["media_estrellas"] !== null): ?>
-            <?= renderStars(round($medias["media_estrellas"], 1)) ?>
-            
-            <div class="metricas-comunidad" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
-                <p style="margin: 0;">⭐ <strong>Estrellas:</strong> <?= round($medias["media_estrellas"], 1) ?> / 5</p>
-                <p style="margin: 0;">💖 <strong>Romance:</strong> <?= round($medias["media_romance"] ?? 0, 1) ?> / 5</p>
-                <p style="margin: 0;">🌶️ <strong>Spicy:</strong> <?= round($medias["media_spicy"] ?? 0, 1) ?> / 5</p>
-                <p style="margin: 0;">💧 <strong>Lágrimas:</strong> <?= round($medias["media_lagrimas"] ?? 0, 1) ?> / 5</p>
-                <p style="margin: 0;">⚡ <strong>Plot Twist:</strong> <?= round($medias["media_plot_twist"] ?? 0, 1) ?> / 5</p>
-            </div>
-        <?php else: ?>
-            <p style="color: #888;">Sin puntuaciones aún.</p>
-        <?php endif; ?>
-    </div>
-
 </div>
 
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-        <a href="index.php" class="nav-card-float">
-            <span class="nav-icon">🏠</span>
-            <span>Inicio</span>
-        </a>
-        <a href="perfil.php" class="nav-card-float">
-            <span class="nav-icon">👤</span>
-            <span>Mi Perfil</span>
-        </a>
-        <a href="biblioteca.php" class="nav-card-float">
-            <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
-        </a>
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        </a>
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
+        <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
+        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi Perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
+        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
+        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
     </nav>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Leer más / menos
+    const btn = document.getElementById('descBtn');
+    const txt = document.getElementById('descTexto');
+    if (btn && txt) {
+        btn.addEventListener('click', () => {
+            const cerrado = txt.classList.toggle('clamp');
+            btn.textContent = cerrado ? 'Leer más' : 'Leer menos';
+        });
+    }
+
+    // Selector de puntuación (admite medias puntuaciones)
+    function updateVisuals(container, val) {
+        container.querySelectorAll('span').forEach(icon => {
+            const iconVal = parseInt(icon.dataset.val);
+            if (iconVal <= val) {
+                icon.style.opacity = '1';
+                icon.style.filter = 'grayscale(0%)';
+                icon.style.color = container.dataset.target === 'input-estrellas' ? '#f5b301' : '';
+            } else if (iconVal - 0.5 === val) {
+                icon.style.opacity = '0.6';
+                icon.style.filter = 'grayscale(30%)';
+                icon.style.color = container.dataset.target === 'input-estrellas' ? '#f5b301' : '';
+            } else {
+                icon.style.opacity = '0.25';
+                icon.style.filter = 'grayscale(100%)';
+                icon.style.color = '';
+            }
+        });
+    }
+
+    document.querySelectorAll('.icon-selector').forEach(container => {
+        const input = document.getElementById(container.dataset.target);
+        const label = document.getElementById(container.dataset.label);
+        updateVisuals(container, parseFloat(input.value) || 0);
+
+        container.querySelectorAll('span').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                const rect = icon.getBoundingClientRect();
+                const baseVal = parseInt(icon.dataset.val);
+                const finalVal = ((e.clientX - rect.left) < rect.width / 2) ? baseVal - 0.5 : baseVal;
+                input.value = finalVal;
+                if (label) label.textContent = finalVal;
+                updateVisuals(container, finalVal);
+            });
+        });
+    });
+});
+</script>
 
 </body>
 </html>

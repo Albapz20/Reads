@@ -24,11 +24,21 @@ require_once "../src/PortadasService.php";
 $db = new Database();
 
 // Obtener libros sin portada o que tengan la imagen genérica por defecto
-$sql = "SELECT id, titulo, autores FROM listas_lectura WHERE portada IS NULL OR portada = '' OR portada LIKE '%default%'";
-$stmt = $db->pdo->prepare($sql);
+$stmt = $db->pdo->prepare("SELECT id, titulo, autores, portada FROM listas_lectura");
 $stmt->execute();
-$libros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$libros = array_filter($stmt->fetchAll(PDO::FETCH_ASSOC), function ($l) {
+    $p = trim((string)$l['portada']);
+
+    if ($p === '' || $p === 'sin portada' || stripos($p, 'default') !== false || stripos($p, 'placehold') !== false) {
+        return true;
+    }
+    if (str_starts_with($p, 'uploads/')) {
+        $f = __DIR__ . '/' . $p;
+        return !is_file($f) || filesize($f) < 500;
+    }
+    return false;
+});
 echo "<h1>Actualizando portadas pendientes...</h1>";
 echo "<p>Encontrados <strong>" . count($libros) . "</strong> libros por procesar.</p><hr>";
 flush();

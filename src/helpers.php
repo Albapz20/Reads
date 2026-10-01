@@ -1,70 +1,55 @@
 <?php
+require_once __DIR__ . '/PortadasService.php';
+
 function obtenerPortadaValida(?string $url, ?int $libroId = null): string {
-    if (empty($url) || $url === 'sin portada' || str_contains($url, 'placehold')) {
+    static $descargasEnEstaCarga = 0;
+    $maxDescargasPorCarga = 3;
+
+    $url = trim((string)$url);
+    if ($url === '' || $url === 'sin portada' || str_contains($url, 'placehold')) {
         return '';
     }
 
-    $urlLimpia = trim($url);
+    $dirPublic = __DIR__ . '/../public/';
 
-    //  Si ya es una ruta local, la servimos directamente
-    if (str_starts_with($urlLimpia, 'uploads/') || str_starts_with($urlLimpia, 'img/')) {
-        return $urlLimpia;
+    // Url local ya descargada
+    if (str_starts_with($url, 'uploads/') || str_starts_with($url, 'img/')) {
+        return (is_file($dirPublic . $url) && filesize($dirPublic . $url) > 500) ? $url : '';
     }
 
-    // Si tenemos ID y es una URL externa, forzamos la descarga local
+    // Url externa: intentar descargar y validar
+    $urlHttps = str_replace('http://', 'https://', $url);
+
     if ($libroId) {
-        $directorioFisico = __DIR__ . '/../public/uploads/portadas/';
-        
-        if (!file_exists($directorioFisico)) {
-            @mkdir($directorioFisico, 0777, true);
-        }
+        $nombre       = 'portada_' . $libroId . '.jpg';
+        $rutaFisica   = $dirPublic . 'uploads/portadas/' . $nombre;
+        $rutaRelativa = 'uploads/portadas/' . $nombre;
 
-        $nombreArchivo = 'portada_' . $libroId . '.jpg';
-        $rutaFisica = $directorioFisico . $nombreArchivo;
-        $rutaRelativa = 'uploads/portadas/' . $nombreArchivo;
-
-        // Si ya se descargó previamente, devolver ruta local
-        if (file_exists($rutaFisica) && filesize($rutaFisica) > 500) {
+        // Ya descargada antes
+        if (is_file($rutaFisica) && filesize($rutaFisica) > 500) {
             return $rutaRelativa;
         }
 
-        // Intento de descarga 1: cURL
-        $contenidoImagen = false;
-        if (function_exists('curl_init')) {
-            $ch = curl_init($urlLimpia);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-            $contenidoImagen = curl_exec($ch);
-            curl_close($ch);
+        // Limitar descargas para no bloquear la página
+        if ($descargasEnEstaCarga >= $maxDescargasPorCarga) {
+            return $urlHttps;
         }
+        $descargasEnEstaCarga++;
 
-        // Intento de descarga 2: file_get_contents (si cURL falla)
-        if (!$contenidoImagen || strlen($contenidoImagen) < 500) {
-            $contexto = stream_context_create([
-                'http' => ['header' => "User-Agent: Mozilla/5.0\r\n"],
-                'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
-            ]);
-            $contenidoImagen = @file_get_contents($urlLimpia, false, $contexto);
-        }
-
-        // Si se logró descargar la imagen físicamente
-        if ($contenidoImagen && strlen($contenidoImagen) > 500) {
-            file_put_contents($rutaFisica, $contenidoImagen);
-
-            // Actualizar la base de datos para no volver a pedir la URL remota
+        if (PortadasService::descargarImagenValidada($urlHttps, $rutaFisica)) {
             try {
                 $db = new Database();
-                $db->pdo->prepare("UPDATE listas_lectura SET portada = ? WHERE id = ?")->execute([$rutaRelativa, $libroId]);
-                $db->pdo->prepare("UPDATE libros SET portada = ? WHERE id = ?")->execute([$rutaRelativa, $libroId]);
+                $db->pdo->prepare("UPDATE listas_lectura SET portada = ? WHERE id = ?")
+                        ->execute([$rutaRelativa, $libroId]);
             } catch (Exception $e) {
                 // Silencioso
             }
-
             return $rutaRelativa;
         }
+
+        // La URL remota no devuelve una imagen válida.
+        return '';
     }
 
-    return str_replace('http://', 'https://', $urlLimpia);
+    return $urlHttps;
 }

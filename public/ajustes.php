@@ -58,7 +58,7 @@ $stmtCount = $db->pdo->prepare("SELECT COUNT(*) FROM listas_lectura WHERE usuari
 $stmtCount->execute([$usuario["id"]]);
 $totalLibrosUsuario = (int)$stmtCount->fetchColumn();
 
-/* 2. EXPORTAR BIBLIOTECA A CSV */
+// Exportar CSV de Goodreads
 if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     $sql = "SELECT * FROM listas_lectura WHERE usuario_id = ?";
     $stmt = $db->pdo->prepare($sql);
@@ -101,7 +101,7 @@ if (isset($_GET["exportar"]) && $_GET["exportar"] === "goodreads") {
     exit;
 }
 
-/* 3. IMPORTAR CSV DE GOODREADS */
+// Importar CSV de Goodreads
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])) {
     @set_time_limit(180);
 
@@ -201,7 +201,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
 
             $importados = 0;
             foreach ($filas as $libro) {
-                $listaService->agregarLibro($usuario["id"], $libro['id_ref'], $libro['titulo'], $libro['portada_local'], $libro['estado']);
+                $listaService->agregarLibro(
+    $usuario["id"], $libro['id_ref'], $libro['titulo'],
+    $libro['portada_local'], $libro['estado'],
+    $libro['autor'], $libro['fecha_fin']
+);
                 $importados++;
             }
 
@@ -214,7 +218,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
     }
 }
 
-/* 4. GUARDAR AJUSTES GENERALES (NOMBRE, EMAIL, OBJETIVO Y PRIVACIDAD) */
+// Guardar ajustes del perfil generales
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_ajustes"])) {
     $nuevoNombre    = trim($_POST["nombre"] ?? "");
     $nuevoEmail     = trim($_POST["email"] ?? "");
@@ -222,6 +226,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_ajustes"])) {
     $mostrar_email  = ($privacidad === "publico") ? 1 : 0;
     $mostrar_listas = ($privacidad === "publico") ? 1 : 0;
     $objetivo_anual = isset($_POST["objetivo_anual"]) ? (int)$_POST["objetivo_anual"] : 20;
+    $idiomasValidos = ['spa', 'eng', 'cat', 'fra', 'ita', 'por', 'deu', ''];
+    $idioma_lectura = in_array($_POST["idioma_lectura"] ?? 'spa', $idiomasValidos, true)
+        ? $_POST["idioma_lectura"]
+        : 'spa';
 
     // Actualizar nombre y email en la tabla 'usuarios'
     if (!empty($nuevoNombre) && !empty($nuevoEmail)) {
@@ -239,17 +247,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_ajustes"])) {
     }
 
     // Actualizar objetivo y visibilidad en 'ajustes_usuario'
-    $stmtUp = $db->pdo->prepare("UPDATE ajustes_usuario SET mostrar_email = ?, mostrar_listas = ?, objetivo_anual = ? WHERE usuario_id = ?");
-    $stmtUp->execute([$mostrar_email, $mostrar_listas, $objetivo_anual, $usuario["id"]]);
+    $stmtUp = $db->pdo->prepare("UPDATE ajustes_usuario SET mostrar_email = ?, mostrar_listas = ?, objetivo_anual = ?, idioma_lectura = ? WHERE usuario_id = ?");
+    $stmtUp->execute([$mostrar_email, $mostrar_listas, $objetivo_anual, $idioma_lectura, $usuario["id"]]);
 
     $ajustes["mostrar_email"]  = $mostrar_email;
     $ajustes["mostrar_listas"] = $mostrar_listas;
     $ajustes["objetivo_anual"] = $objetivo_anual;
+    $ajustes["idioma_lectura"] = $idioma_lectura;
 
     $mensaje = "Ajustes del perfil guardados correctamente.";
 }
 
-/* 5. ENVIAR MENSAJE DE CONTACTO */
+// Enviar mensaje de contacto
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
     $asunto  = trim($_POST["asunto"]);
     $mensajeContacto = trim($_POST["mensaje_contacto"]);
@@ -533,7 +542,7 @@ $temasDisponibles = [
 
 <div class="container">
 
-    <!-- CABECERA -->
+    <!-- Cabecera -->
     <div class="header-section">
         <h1>⚙️ Ajustes de la aplicación</h1>
         <p>Personaliza tu experiencia, estilos visuales e importación de libros</p>
@@ -545,7 +554,7 @@ $temasDisponibles = [
         </div>
     <?php endif; ?>
 
-    <!-- TARJETA 1: ESTILO VISUAL & TEMAS -->
+    <!-- Estilo Visual y Temas -->
     <div class="panel card-panel">
         <h2 class="card-title">🎨 Estilo Visual & Temas (9)</h2>
         <p class="card-subtitle">Elige la paleta visual que mejor se adapte a tu estado de ánimo o momento del día:</p>
@@ -571,7 +580,7 @@ $temasDisponibles = [
         </form>
     </div>
 
-    <!-- TARJETA 2: AJUSTES GENERALES DEL PERFIL (EDITABLE) -->
+    <!-- Ajustes generales del perfil -->
     <div class="panel card-panel">
         <h2 class="card-title">Ajustes generales del perfil</h2>
 
@@ -599,6 +608,19 @@ $temasDisponibles = [
                         <option value="privado" <?= ($ajustes['mostrar_listas'] == 0) ? 'selected' : '' ?>>Privado</option>
                     </select>
                 </div>
+              <div class="form-group">
+                <label>Idioma de las recomendaciones:</label>
+                <select name="idioma_lectura" class="form-control">
+                    <?php
+                    $idiomasUI = ['spa'=>'Español','eng'=>'Inglés','cat'=>'Català','fra'=>'Français',
+                      'ita'=>'Italiano','por'=>'Português','deu'=>'Deutsch','' =>'Cualquier idioma'];
+                     $actual = $ajustes['idioma_lectura'] ?? 'spa';
+                    foreach ($idiomasUI as $cod => $nombre): ?>
+                        <option value="<?= $cod ?>" <?= ($actual === $cod) ? 'selected' : '' ?>><?= $nombre ?></option>
+                    <?php endforeach; ?>
+                </select>
+                </div>                  
+                
             </div>
 
             <div class="btn-submit-container">
@@ -607,7 +629,7 @@ $temasDisponibles = [
         </form>
     </div>
 
-    <!-- TARJETA 3: IMPORTAR / EXPORTAR GOODREADS -->
+    <!-- Importar / Exportar Goodreads -->
     <div class="panel card-panel">
         <h2 class="card-title">📤📚 Importar / Exportar Goodreads</h2>
 
@@ -638,7 +660,7 @@ $temasDisponibles = [
         </div>
     </div>
 
-    <!-- TARJETA 4: CONTACTA CON EL EQUIPO -->
+    <!-- Contacto con el equipo -->
     <div class="panel card-panel">
         <h2 class="card-title">📩 Contacta con el equipo</h2>
         <p class="card-subtitle">¿Tienes sugerencias, ideas de nuevas funciones o has encontrado alguna duda? Envíanos tu mensaje:</p>
