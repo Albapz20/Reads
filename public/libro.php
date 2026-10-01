@@ -127,6 +127,13 @@ if (is_array($descripcion)) {
 if (!empty($descripcionURL)) {
     $descripcion = $descripcionURL;
 }
+$descLog = [
+    'proveedor' => $proveedor,
+    'id'        => $id_externo,
+    'titulo'    => $titulo,
+    'autor'     => $autor,
+    'desc_api_caracteres' => (trim((string)$descripcion) === 'Sin descripción disponible.') ? 0 : mb_strlen(trim((string)$descripcion)),
+];
 
 // Función auxiliar para consultar APIs que devuelven JSON
 if (!function_exists('lbJson')) {
@@ -148,84 +155,122 @@ $sinDesc = function ($d) {
     return trim((string)$d) === '' || $d === "Sin descripción disponible.";
 };
 
+if (session_status() === PHP_SESSION_NONE) @session_start();
+$claveFallo = 'desc_fail_' . md5($id_externo . '|' . $titulo);
+// Si ya falló hace menos de 6 h, no repetir las búsquedas externas (con ?debug sí se repiten)
+$saltarRescates = !isset($_GET['debug']) && isset($_SESSION[$claveFallo]) && (time() - $_SESSION[$claveFallo]) < 6 * 3600;
+
 // Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
 if ($sinDesc($descripcion)) {
+    $tituloBaseDB = trim(preg_replace('/\s+/', ' ', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo)));
     $consultas = [
-        ["SELECT descripcion FROM libros WHERE libro_id = ? LIMIT 1", [$id_externo]],
-        ["SELECT descripcion FROM libros WHERE id = ? LIMIT 1", [$id_externo]],
-        ["SELECT descripcion FROM libros WHERE titulo = ? LIMIT 1", [$titulo]],
+        ["SELECT descripcion FROM libros WHERE id_externo = ? AND descripcion IS NOT NULL AND descripcion <> '' LIMIT 1", [$id_externo]],
+        ["SELECT descripcion FROM libros WHERE titulo = ? AND descripcion IS NOT NULL AND descripcion <> '' LIMIT 1", [$titulo]],
+        ["SELECT descripcion FROM libros WHERE titulo LIKE ? AND descripcion IS NOT NULL AND descripcion <> '' ORDER BY CHAR_LENGTH(titulo) ASC LIMIT 1", ['%' . $tituloBaseDB . '%']],
         ["SELECT descripcion FROM listas_lectura
           WHERE (libro_id = ? OR titulo = ?) AND descripcion IS NOT NULL AND descripcion <> ''
           ORDER BY CHAR_LENGTH(descripcion) DESC LIMIT 1", [$id_externo, $titulo]],
     ];
-    foreach ($consultas as [$sqlD, $paramsD]) {
+    foreach ($consultas as $n => [$sqlD, $paramsD]) {
         try {
             $stD = $db->pdo->prepare($sqlD);
-            if (!$stD) continue;               // p. ej. la columna no existe
+            if (!$stD) { $descLog["bd$n"] = 'no se pudo preparar (¿columna inexistente?)'; continue; }
             $stD->execute($paramsD);
             $d = $stD->fetchColumn();
-            if (!$sinDesc($d)) { $descripcion = $d; break; }
+            if (!$sinDesc($d)) { $descripcion = $d; $descLog["bd$n"] = 'ENCONTRADA'; break; }
+            $descLog["bd$n"] = 'sin resultado';
         } catch (Throwable $e) {
-            // probar la siguiente consulta
+            $descLog["bd$n"] = 'error: ' . $e->getMessage();
         }
     }
 }
 
 // Descripción y portada de rescate con Google Books
-if (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false) {
+if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false)) {
 
-    $apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: ''; // aun por definir la apikey
+    // La clave ya NO va en el código: defínela como variable de entorno GOOGLE_BOOKS_API_KEY
+    $apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: '';
+    $archivoConfig = __DIR__ . '/../src/config.local.php';
+    if ($apiKey === '' && is_file($archivoConfig)) {
+        $cfg = require $archivoConfig;
+        $apiKey = is_array($cfg) ? (string)($cfg['google_books_key'] ?? '') : '';
+    }
 
-    $tituloLimpio = trim(explode('/', $titulo)[0]);
-    $tituloLimpio = trim(explode('-', $tituloLimpio)[0]);
+    $tituloLimpio = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
+    $tituloLimpio = trim(explode('/', $tituloLimpio)[0]);
+    $tituloLimpio = trim(explode(' - ', $tituloLimpio)[0]);
     $autorLimpio = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
 
+    // Cada intento: [consulta, restringir a español]
     $intentos = [];
-    if (!empty($autorLimpio)) {
-        $intentos[] = $tituloLimpio . " " . $autorLimpio;
+    if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo)) {
+        $intentos[] = ['isbn:' . $id_externo, false];   // ISBN exacto, en cualquier idioma
     }
-    $intentos[] = $tituloLimpio;
+    if ($autorLimpio !== '') {
+        $intentos[] = ['intitle:"' . $tituloLimpio . '" inauthor:"' . $autorLimpio . '"', false];
+        $intentos[] = [$tituloLimpio . ' ' . $autorLimpio, true];
+    }
+    $intentos[] = [$tituloLimpio, true];
 
-    foreach ($intentos as $query) {
-        $urlAPI = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode(trim($query))
+    $simTitulo = function (string $a, string $b): bool {
+        $a = mb_strtolower($a, 'UTF-8'); $b = mb_strtolower($b, 'UTF-8');
+        similar_text($a, $b, $pct);
+        return $pct >= 55 || str_contains($a, $b) || str_contains($b, $a);
+    };
+
+    $descEncontrada = false;
+    foreach ($intentos as $n => [$query, $soloEs]) {
+        if ($descEncontrada && strpos($portada, 'placehold.co') === false) break;
+
+        $urlAPI = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode($query)
                 . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '')
-                . "&langRestrict=es&maxResults=1";
+                . ($soloEs ? "&langRestrict=es" : '')
+                . "&maxResults=5";
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $urlAPI,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_TIMEOUT => 5,
-            CURLOPT_USERAGENT => 'Mozilla/5.0'
-        ]);
+        $json = false; $codigoHttp = 0;
+        for ($reintento = 0; $reintento < 2; $reintento++) {   // reintentar una vez si Google da 5xx
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $urlAPI,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_TIMEOUT => 6,
+                CURLOPT_USERAGENT => 'Mozilla/5.0'
+            ]);
+            $json = curl_exec($ch);
+            $codigoHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($codigoHttp < 500) break;
+            usleep(400000);
+        }
+        if ($codigoHttp === 429) { $descLog['google'][] = 429; break; }
 
-        $json = curl_exec($ch);
-        curl_close($ch);
+        $items = $json ? (json_decode($json, true)['items'] ?? []) : [];
+        $conDesc = 0;
 
-        if ($json) {
-            $dataGB = json_decode($json, true);
-            $item = $dataGB["items"][0]["volumeInfo"] ?? null;
+        foreach ($items as $it) {
+            $vi = $it["volumeInfo"] ?? [];
+            if (!$simTitulo($tituloLimpio, (string)($vi["title"] ?? ''))) continue;
 
-            if ($item) {
-                if (!empty($item["description"]) && ($descripcion === "Sin descripción disponible." || empty(trim($descripcion)))) {
-                    $descripcion = $item["description"];
-                }
-
-                if (strpos($portada, 'placehold.co') !== false && !empty($item["imageLinks"])) {
-                    $imgRescate = $item["imageLinks"]["thumbnail"] ?? $item["imageLinks"]["smallThumbnail"] ?? "";
-                    if (!empty($imgRescate)) {
-                        $portada = str_replace("http://", "https://", $imgRescate);
-                    }
+            if (!empty($vi["description"])) {
+                $conDesc++;
+                if (!$descEncontrada) {
+                    $descripcion = $vi["description"];
+                    $descEncontrada = true;
                 }
             }
+            if (strpos($portada, 'placehold.co') !== false && !empty($vi["imageLinks"])) {
+                $img = $vi["imageLinks"]["thumbnail"] ?? $vi["imageLinks"]["smallThumbnail"] ?? "";
+                if ($img) $portada = str_replace("http://", "https://", $img);
+            }
         }
+        $descLog['google'][] = "intento $n: HTTP $codigoHttp, " . count($items) . " resultados, $conDesc con descripción";
     }
 }
 
-// Otro rescate de descripción desde Open Library si aún no se tiene
-if ($sinDesc($descripcion)) {
+// Último recurso: Open Library (título + autor, y luego la ficha de la obra)
+if (!$saltarRescates && $sinDesc($descripcion)) {
     $tOL = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
     $qOL = ['title' => $tOL, 'limit' => 3, 'fields' => 'key,title,author_name'];
     if ($autor !== "Autor desconocido") $qOL['author'] = trim(explode(',', $autor)[0]);
@@ -240,8 +285,152 @@ if ($sinDesc($descripcion)) {
     }
 }
 
+// Apple Books (API de iTunes, sin clave): suele tener descripciones de ediciones en español
+if (!$saltarRescates && $sinDesc($descripcion)) {
+    $tAB = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
+    $autorAB = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
+    $apellidoAB = mb_strtolower(trim((string)array_slice(explode(' ', $autorAB), -1)[0]), 'UTF-8');
+
+    $peticiones = [];   // [url, es_busqueda_por_isbn]
+    if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo)) {
+        foreach (['es', 'us'] as $pais) {
+            $peticiones[] = ["https://itunes.apple.com/lookup?isbn=" . urlencode($id_externo) . "&country=$pais", true];
+        }
+    }
+    foreach (['es', 'us'] as $pais) {
+        $peticiones[] = ["https://itunes.apple.com/search?term=" . urlencode(trim($tAB . ' ' . $autorAB)) . "&entity=ebook&country=$pais&limit=5", false];
+    }
+
+    foreach ($peticiones as $n => [$urlAB, $porIsbn]) {
+        $resAB = lbJson($urlAB);
+        $descLog['apple'][] = "petición $n: " . count($resAB['results'] ?? []) . " resultados";
+
+        foreach ($resAB['results'] ?? [] as $itAB) {
+            if (empty($itAB['description'])) continue;
+
+            if (!$porIsbn) {   // en la búsqueda por texto, comprobar título y autor
+                $tEnc = mb_strtolower((string)($itAB['trackName'] ?? ''), 'UTF-8');
+                $aEnc = mb_strtolower((string)($itAB['artistName'] ?? ''), 'UTF-8');
+                similar_text(mb_strtolower($tAB, 'UTF-8'), $tEnc, $pctAB);
+                $tituloOk = $pctAB >= 55 || str_contains($tEnc, mb_strtolower($tAB, 'UTF-8'));
+                $autorOk  = $apellidoAB === '' || str_contains($aEnc, $apellidoAB);
+                if (!$tituloOk || !$autorOk) continue;
+            }
+
+            $descripcion = preg_replace('/<\s*(br|\/p)\s*\/?>/i', "\n", $itAB['description']);
+            $descLog['apple_encontrada'] = $itAB['trackName'] ?? '';
+            break 2;
+        }
+    }
+}
+
+// Otra edición del mismo libro (p. ej. el original en inglés), buscando por autor
+if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido") {
+    $norm = function (string $t): string {
+        $t = strtr(mb_strtolower($t, 'UTF-8'), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
+        return trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9]+/', ' ', $t)));
+    };
+    $base = function (string $t) use ($norm): string {   // título sin subtítulo ni saga
+        $t = preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $t);
+        return $norm(preg_split('/\s*:\s*/u', $t)[0]);
+    };
+
+    $clave = function (string $n) use ($norm): string {
+        $t = array_values(array_filter(explode(' ', $norm($n)), fn($w) => strlen($w) > 1));
+        return count($t) >= 2 ? $t[0] . ' ' . end($t) : implode(' ', $t);
+    };
+    $autorNorm = $clave(trim(explode(',', $autor)[0]));
+    $apiKey = $apiKey ?? '';
+
+    // Páginas de referencia (para descartar libros distintos del mismo autor)
+    $pagsRef = (int)$paginasTotalesAPI;
+    try {
+        $stP = $db->pdo->prepare("SELECT paginas_totales FROM listas_lectura WHERE libro_id = ? OR titulo = ? LIMIT 1");
+        $stP->execute([$id_externo, $titulo]);
+        $pagsRef = max($pagsRef, (int)$stP->fetchColumn());
+    } catch (Throwable $e) {}
+
+    $urlA = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode('inauthor:"' . $autorNorm . '"')
+          . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '') . "&printType=books&maxResults=20";
+    $resA = lbJson($urlA);
+
+    $candidatos = [];   // título base => [descripción, título original]
+    $cercanos   = [];   // los mismos, pero solo con páginas parecidas
+    foreach ($resA['items'] ?? [] as $itA) {
+        $vi = $itA['volumeInfo'] ?? [];
+        if (empty($vi['description'])) continue;
+        // el autor debe coincidir exactamente (evita "Ana Garriga Domínguez" frente a "Ana Garriga")
+        if (!in_array($autorNorm, array_map($clave, $vi['authors'] ?? []), true)) continue;
+        $pc = (int)($vi['pageCount'] ?? 0);
+        $kB = $base((string)($vi['title'] ?? ''));
+        $candidatos[$kB] ??= [$vi['description'], $vi['title'] ?? ''];
+        if (!($pagsRef > 0 && $pc > 0 && abs($pc - $pagsRef) / $pagsRef > 0.30)) {
+            $cercanos[$kB] ??= [$vi['description'], $vi['title'] ?? ''];
+        }
+    }
+    // Si el autor solo tiene un libro, se usa sin más; si tiene varios, se desempata por páginas (±30 %)
+    if (count($candidatos) !== 1 && count($cercanos) === 1) $candidatos = $cercanos;
+
+    $descLog['otra_edicion'] = 'Google: ' . count($resA['items'] ?? []) . ' resultados, ' . count($candidatos) . ' candidatos';
+    if (count($candidatos) === 1) {            // solo si no hay ambigüedad
+        [$descripcion, $tOrig] = array_values($candidatos)[0];
+        $descLog['otra_edicion'] = 'usada (Google): ' . $tOrig;
+    }
+
+    // Segunda vía: Open Library (obras del mismo autor y descripción de la ficha de la obra)
+    if ($sinDesc($descripcion)) {
+        $resO = lbJson('https://openlibrary.org/search.json?' . http_build_query([
+            'author' => $autorNorm, 'limit' => 20,
+            'fields' => 'key,title,author_name,number_of_pages_median',
+        ]));
+        $obras = [];   // título base => clave de la obra
+        $obrasCerca = [];
+        foreach ($resO['docs'] ?? [] as $dO) {
+            if (!in_array($autorNorm, array_map($clave, $dO['author_name'] ?? []), true)) continue;
+            $pc = (int)($dO['number_of_pages_median'] ?? 0);
+            $kB = $base((string)($dO['title'] ?? ''));
+            $obras[$kB] ??= [$dO['key'] ?? '', $dO['title'] ?? ''];
+            if (!($pagsRef > 0 && $pc > 0 && abs($pc - $pagsRef) / $pagsRef > 0.30)) {
+                $obrasCerca[$kB] ??= [$dO['key'] ?? '', $dO['title'] ?? ''];
+            }
+        }
+        if (count($obras) !== 1 && count($obrasCerca) === 1) $obras = $obrasCerca;
+        $descLog['ol_docs'] = array_map(function ($d) {
+            return ($d['title'] ?? '?') . ' [' . implode(', ', $d['author_name'] ?? []) . '] ' . ($d['number_of_pages_median'] ?? 0) . ' págs.';
+        }, $resO['docs'] ?? []);
+        $descLog['otra_edicion_ol'] = count($resO['docs'] ?? []) . ' resultados, ' . count($obras) . ' obras válidas';
+
+        if (count($obras) === 1) {
+            [$kO, $tO] = array_values($obras)[0];
+            $wO = $kO !== '' ? lbJson('https://openlibrary.org' . $kO . '.json') : [];
+            $dO = $wO['description'] ?? '';
+            if (is_array($dO)) $dO = $dO['value'] ?? '';
+            if (trim((string)$dO) !== '') {
+                $descripcion = $dO;
+                $descLog['otra_edicion_ol'] .= ' → usada: ' . $tO;
+            } else {
+                $descLog['otra_edicion_ol'] .= ' → la ficha de "' . $tO . '" no tiene descripción';
+            }
+        }
+    }
+}
+
 if (empty(trim($descripcion))) {
     $descripcion = "Sin descripción disponible.";
+}
+if ($sinDesc($descripcion)) {
+    $_SESSION[$claveFallo] = time();   // recordar el fallo para no repetir las búsquedas
+}
+
+// Si la descripción se obtuvo por un rescate, guardarla en la lista del usuario
+if ($authUser && $descLog['desc_api_caracteres'] === 0 && !$sinDesc($descripcion)) {
+    try {
+        $db->pdo->prepare(
+            "UPDATE listas_lectura SET descripcion = ?
+             WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?)
+               AND (descripcion IS NULL OR descripcion = '')"
+        )->execute([$descripcion, $authUser["id"], $id_externo, $titulo]);
+    } catch (Throwable $e) {}
 }
 
 // Procesamiento de estado y páginas si el usuario está autenticado
@@ -268,7 +457,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// Datos del usuario sobre este libro 
+// Datos del usuario sobre este libro (una sola consulta)
 $estadoActual = null;
 $libroUser = null;
 $puntuacionUsuario = null;
@@ -292,6 +481,7 @@ $paginasMostrar = $paginasTotales > 0 ? $paginasTotales : $paginasTotalesAPI;
 $reseñas = $reviewService->obtenerReseñas($id_externo);
 $medias  = $ratingService->obtenerMedias($id_externo);
 
+// URL de portada segura para usarla dentro de CSS url('...')
 $portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
 
 $estados = [
@@ -499,6 +689,9 @@ $metricas = [
 
             <section class="lb-card">
                 <h2>Sobre este libro</h2>
+                <?php if (isset($_GET['debug'])): ?>
+                    <pre style="font-size:.75rem; background:#f4f4f4; color:#222; padding:10px; border-radius:8px; overflow:auto;"><?= htmlspecialchars(print_r($descLog, true)) ?></pre>
+                <?php endif; ?>
                 <?php $descLimpia = strip_tags($descripcion); ?>
                 <p class="lb-desc <?= mb_strlen($descLimpia) > 550 ? 'clamp' : '' ?>" id="descTexto"><?= nl2br(htmlspecialchars($descLimpia, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) ?></p>
                 <?php if (mb_strlen($descLimpia) > 550): ?>
