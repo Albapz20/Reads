@@ -788,27 +788,6 @@ function e($texto) {
         </div>
     </div>
 
-    <!-- Búsquedas recientes-->
-    <div class="panel" style="margin-top: 25px; padding: 15px 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-            <h2 style="color: var(--primary-color, inherit); margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 6px;">
-                🔎 Búsquedas recientes
-            </h2>
-
-            <div class="search-tags-container">
-                <?php if (!empty($busquedasUnicas)): ?>
-                    <?php foreach ($busquedasUnicas as $busqueda): ?>
-                        <a href="buscar.php?q=<?= urlencode($busqueda) ?>" class="search-tag-item">
-                            <?= e($busqueda) ?>
-                        </a>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <span style="font-size: 0.85rem; opacity: 0.6;">Sin búsquedas recientes</span>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
     <!-- Footer -->
     <footer class="site-footer">
         <span style="font-size: 0.85rem; color: #777;">Reads &copy; <?= date("Y") ?></span>
@@ -822,28 +801,36 @@ function e($texto) {
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-        <a href="perfil.php" class="nav-card-float">
+
+        <a href="perfil.php" class="nav-card-float active">
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
-            <span>Estanteria</span>
+            <span>Mi estantería</span>
         </a>
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        </a>
+        
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
-            <span>Calendario</span>
+            <span>Calendario</span>   
         </a>
-        <a href="ajustes.php" class="nav-card-float">
+        
+        <a href="buscar.php" class="nav-card-float">
+            <span class="nav-icon">🔍</span>
+            <span>Buscar</span>
+        </a>
+
+          <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
     </nav>
 </div>
+        
 
 <script>
 const input = document.querySelector('input[name="q"]');

@@ -705,6 +705,10 @@ $temasDisponibles = [
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
         </a>
+         <a href="calendario.php" class="nav-card-float">
+            <span class="nav-icon">📅</span>
+            <span>Calendario</span>   
+        </a>
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>

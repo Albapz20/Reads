@@ -206,14 +206,6 @@ return $stmtInsert->execute([
         return $stmt->execute([$paginas_totales, $paginas_leidas, $porcentaje, $usuario_id, $id]);
     }
 
-    public function guardarReseñaPersonal($usuario_id, $id, $texto) {
-        $sql = "UPDATE listas_lectura 
-                SET reseña_personal = ?
-                WHERE usuario_id = ? AND id = ?";
-        $stmt = $this->db->pdo->prepare($sql);
-        return $stmt->execute([$texto, $usuario_id, $id]);
-    }
-
     public function actualizarEstrellas($usuario_id, $id, $estrellas) {
         $sql = "UPDATE listas_lectura 
                 SET estrellas = ?

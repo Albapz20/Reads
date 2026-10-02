@@ -92,7 +92,7 @@ if (isset($libroAPI["volumeInfo"])) {
     $idioma = $info["language"] ?? "";
     $paginasTotalesAPI = (int)($info["pageCount"] ?? 0);
 } else {
-    // ---- OPEN LIBRARY ----
+    // OPEN LIBRARY 
     $proveedor = "open_library";
     $titulo = $libroAPI["title"] ?? "Sin título";
 
@@ -157,7 +157,6 @@ $sinDesc = function ($d) {
 
 if (session_status() === PHP_SESSION_NONE) @session_start();
 $claveFallo = 'desc_fail_' . md5($id_externo . '|' . $titulo);
-// Si ya falló hace menos de 6 h, no repetir las búsquedas externas (con ?debug sí se repiten)
 $saltarRescates = !isset($_GET['debug']) && isset($_SESSION[$claveFallo]) && (time() - $_SESSION[$claveFallo]) < 6 * 3600;
 
 // Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
@@ -188,7 +187,6 @@ if ($sinDesc($descripcion)) {
 // Descripción y portada de rescate con Google Books
 if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false)) {
 
-    // La clave ya NO va en el código: defínela como variable de entorno GOOGLE_BOOKS_API_KEY
     $apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: '';
     $archivoConfig = __DIR__ . '/../src/config.local.php';
     if ($apiKey === '' && is_file($archivoConfig)) {
@@ -201,10 +199,9 @@ if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin desc
     $tituloLimpio = trim(explode(' - ', $tituloLimpio)[0]);
     $autorLimpio = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
 
-    // Cada intento: [consulta, restringir a español]
     $intentos = [];
     if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo)) {
-        $intentos[] = ['isbn:' . $id_externo, false];   // ISBN exacto, en cualquier idioma
+        $intentos[] = ['isbn:' . $id_externo, false];  
     }
     if ($autorLimpio !== '') {
         $intentos[] = ['intitle:"' . $tituloLimpio . '" inauthor:"' . $autorLimpio . '"', false];
@@ -228,7 +225,7 @@ if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin desc
                 . "&maxResults=5";
 
         $json = false; $codigoHttp = 0;
-        for ($reintento = 0; $reintento < 2; $reintento++) {   // reintentar una vez si Google da 5xx
+        for ($reintento = 0; $reintento < 2; $reintento++) {  
             $ch = curl_init();
             curl_setopt_array($ch, [
                 CURLOPT_URL => $urlAPI,
@@ -285,7 +282,7 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Apple Books (API de iTunes, sin clave): suele tener descripciones de ediciones en español
+// Apple Books (API de iTunes, sin clave)
 if (!$saltarRescates && $sinDesc($descripcion)) {
     $tAB = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
     $autorAB = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
@@ -324,7 +321,7 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Otra edición del mismo libro (p. ej. el original en inglés), buscando por autor
+// Otra edición del mismo libro buscando por autor
 if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido") {
     $norm = function (string $t): string {
         $t = strtr(mb_strtolower($t, 'UTF-8'), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
@@ -354,12 +351,12 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
           . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '') . "&printType=books&maxResults=20";
     $resA = lbJson($urlA);
 
-    $candidatos = [];   // título base => [descripción, título original]
-    $cercanos   = [];   // los mismos, pero solo con páginas parecidas
+    $candidatos = [];   // título base [descripción, título original]
+    $cercanos   = [];   
     foreach ($resA['items'] ?? [] as $itA) {
         $vi = $itA['volumeInfo'] ?? [];
         if (empty($vi['description'])) continue;
-        // el autor debe coincidir exactamente (evita "Ana Garriga Domínguez" frente a "Ana Garriga")
+        // el autor debe coincidir exactamente
         if (!in_array($autorNorm, array_map($clave, $vi['authors'] ?? []), true)) continue;
         $pc = (int)($vi['pageCount'] ?? 0);
         $kB = $base((string)($vi['title'] ?? ''));
@@ -368,7 +365,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             $cercanos[$kB] ??= [$vi['description'], $vi['title'] ?? ''];
         }
     }
-    // Si el autor solo tiene un libro, se usa sin más; si tiene varios, se desempata por páginas (±30 %)
+    // Si el autor solo tiene un libro, se usa sin más; si tiene varios, se desempata por página
     if (count($candidatos) !== 1 && count($cercanos) === 1) $candidatos = $cercanos;
 
     $descLog['otra_edicion'] = 'Google: ' . count($resA['items'] ?? []) . ' resultados, ' . count($candidatos) . ' candidatos';
@@ -383,7 +380,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             'author' => $autorNorm, 'limit' => 20,
             'fields' => 'key,title,author_name,number_of_pages_median',
         ]));
-        $obras = [];   // título base => clave de la obra
+        $obras = [];   
         $obrasCerca = [];
         foreach ($resO['docs'] ?? [] as $dO) {
             if (!in_array($autorNorm, array_map($clave, $dO['author_name'] ?? []), true)) continue;
@@ -457,9 +454,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// Datos del usuario sobre este libro (una sola consulta)
+// Datos del usuario sobre este libro 
 $estadoActual = null;
 $libroUser = null;
+$miReseña = '';
 $puntuacionUsuario = null;
 if ($authUser) {
     $stmt = $db->pdo->prepare("SELECT * FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1");
@@ -468,6 +466,8 @@ if ($authUser) {
     if ($libroUser) $estadoActual = $libroUser["estado"];
 
     $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
+    $miReseña = $reviewService->obtenerReseñaUsuario($authUser["id"], $id_externo);
+
 }
 
 $paginasTotales = $libroUser ? (int)$libroUser["paginas_totales"] : 0;
@@ -481,7 +481,7 @@ $paginasMostrar = $paginasTotales > 0 ? $paginasTotales : $paginasTotalesAPI;
 $reseñas = $reviewService->obtenerReseñas($id_externo);
 $medias  = $ratingService->obtenerMedias($id_externo);
 
-// URL de portada segura para usarla dentro de CSS url('...')
+// URL de portada segura para usarla dentro de CSS url
 $portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
 
 $estados = [
@@ -704,7 +704,7 @@ $metricas = [
                 <h2>Tu reseña</h2>
                 <form action="guardar_reseña.php" method="POST">
                     <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
-                    <textarea name="contenido" rows="4" placeholder="¿Qué te ha parecido?" required></textarea>
+                    <textarea name="contenido" rows="4" placeholder="¿Qué te ha parecido?"><?= htmlspecialchars($miReseña) ?></textarea>
                     <button type="submit" class="lb-btn" style="width:auto; padding:10px 22px;">Guardar reseña</button>
                 </form>
             </section>
@@ -737,6 +737,28 @@ $metricas = [
                 </div>
                 <div class="lb-bar"><div style="width: <?= (int)$progreso ?>%"></div></div>
                 <a href="editar_libro.php?id=<?= (int)$libroUser["id"] ?>" class="lb-link">✏️ Editar progreso</a>
+            </section>
+
+            <section class="lb-card">
+                <h2>Gestionar libro</h2>
+
+                <?php if ($libroUser["estado"] === "leido" && !empty($libroUser["fecha_fin"])): ?>
+                    <p style="margin:0 0 14px; font-size:.9rem;"><strong>Terminado el:</strong> <?= htmlspecialchars(date('d/m/Y', strtotime($libroUser["fecha_fin"]))) ?></p>
+                <?php endif; ?>
+
+                <?php if ($libroUser["estado"] === "abandonado"): ?>
+                    <form method="POST" action="actualizar_progreso.php" style="margin-bottom:16px;">
+                        <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
+                        <label for="motivo_abandono" style="font-weight:700; font-size:.9rem; display:block; margin-bottom:6px;">Motivo de abandono</label>
+                        <textarea name="motivo_abandono" id="motivo_abandono" rows="3" placeholder="¿Por qué lo dejaste?"><?= htmlspecialchars($libroUser["motivo_abandono"] ?? "") ?></textarea>
+                        <button type="submit" class="lb-btn">Guardar motivo</button>
+                    </form>
+                <?php endif; ?>
+
+                <form method="POST" action="eliminar_libro.php" onsubmit="return confirm('¿Seguro que quieres eliminar este libro de tu biblioteca?');">
+                    <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
+                    <button type="submit" class="lb-btn" style="background:#c0392b;">🗑️ Eliminar de mi biblioteca</button>
+                </form>
             </section>
             <?php endif; ?>
 
