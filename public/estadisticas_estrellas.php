@@ -62,19 +62,11 @@ $maxPaginas = $totalLibros > 0 ? max($paginasArray) : 0;
 <meta charset="UTF-8">
 <title>⭐ <?= $valor ?> estrellas — Estadísticas</title>
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+<link rel="stylesheet" href="/Reads/public/css/styles.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-.container { max-width: 680px; margin: 0 auto; padding: 20px; }
-.panel { background: #ffffff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.panel-header h1, .panel-header h2 { margin: 0; font-size: 1.25rem; }
-.review-card { background: #fafafa; border: 1px solid #eee; border-radius: 10px; padding: 12px 15px; margin-bottom: 10px; }
-.libro-header { display: flex; gap: 12px; align-items: center; }
-.libro-portada { width: 44px; height: 64px; object-fit: cover; border-radius: 4px; }
-.acciones-perfil a { background: #f1f3f5; padding: 6px 12px; border-radius: 20px; text-decoration: none; font-size: 0.85rem; color: #333; display: inline-block; }
-</style>
+
 </head>
-<body>
+<body class="page-estadisticas-estrellas">
 
 <div class="container">
 

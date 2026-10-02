@@ -46,9 +46,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <title>Cambiar contraseña</title>
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
 </head>
 
-<body>
+<body class="page-cambiar-contraseña">
 
 <div class="container">
 

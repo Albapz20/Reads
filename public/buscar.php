@@ -63,118 +63,13 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
     <script src="main.js"></script>
     <title>Buscar libros</title>
-    <style>
-        :root {
-            --bs-accent: var(--primary-color, var(--color-primario, #d87d8a));
-            --bs-border: var(--border-color, rgba(0,0,0,.09));
-            --bs-surface: var(--bg-card, #ffffff);
-        }
-        body { padding-bottom: 110px; }
-        .bs-wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px; }
-
-        /*  Buscador  */
-        .bs-hero {
-            background: var(--bs-surface); border: 1px solid var(--bs-border); border-radius: 22px;
-            padding: 28px; margin-bottom: 22px; position: relative; overflow: hidden;
-        }
-        .bs-hero::before {
-            content: ""; position: absolute; inset: 0 0 auto 0; height: 5px; background: var(--bs-accent);
-        }
-        .bs-hero h1 { margin: 0 0 4px; font-size: 1.8rem; }
-        .bs-hero p { margin: 0 0 18px; opacity: .7; }
-        .bs-form { display: flex; gap: 10px; }
-        .bs-input-wrap { position: relative; flex: 1; }
-        .bs-input-wrap span { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 1.1rem; opacity: .6; pointer-events: none; }
-        .bs-input {
-            width: 100%; box-sizing: border-box; padding: 14px 16px 14px 46px; font: inherit; font-size: 1.05rem;
-            border: 2px solid var(--bs-border); border-radius: 14px; outline: none; background: transparent; color: inherit;
-        }
-        .bs-input:focus { border-color: var(--bs-accent); }
-        .bs-btn {
-            padding: 0 26px; border: none; border-radius: 14px; background: var(--bs-accent); color: #fff;
-            font: inherit; font-weight: 700; font-size: 1rem; cursor: pointer;
-        }
-        .bs-btn:hover { opacity: .92; }
-
-        /*  Chips  */
-        .bs-bloque { margin-top: 18px; }
-        .bs-bloque h2 { margin: 0 0 10px; font-size: .95rem; opacity: .75; font-weight: 700; }
-        .bs-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-        .bs-chip {
-            padding: 7px 14px; border-radius: 999px; border: 1px solid var(--bs-border);
-            text-decoration: none; color: inherit; font-size: .88rem; font-weight: 600;
-            transition: background .15s, color .15s, border-color .15s;
-        }
-        .bs-chip:hover { background: var(--bs-accent); border-color: var(--bs-accent); color: #fff; }
-
-        /*  Secciones  */
-        .bs-card { background: var(--bs-surface); border: 1px solid var(--bs-border); border-radius: 18px; padding: 22px; margin-bottom: 20px; }
-        .bs-card h2 { margin: 0 0 4px; font-size: 1.15rem; }
-        .bs-sub { margin: 0 0 14px; font-size: .88rem; opacity: .7; }
-
-        /* Recomendados (carrusel) */
-        .rec-scroll { display: flex; gap: 14px; overflow-x: auto; padding: 6px 2px 12px; scrollbar-width: thin; }
-        .rec-card { flex: 0 0 120px; text-decoration: none; color: inherit; }
-        .rec-card .portada { width: 120px; height: 175px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,.18); transition: transform .2s; background: #1e293b; }
-        .rec-card:hover .portada { transform: translateY(-4px); }
-        .rec-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .rec-card .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .82rem; font-weight: 700; margin-top: 8px; line-height: 1.2; }
-        .rec-card .a { font-size: .74rem; opacity: .65; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        /* Resultados */
-        .bs-resultados-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-        .bs-resultados-head h2 { margin: 0; font-size: 1.2rem; }
-        .bs-resultados-head span { opacity: .65; font-size: .9rem; }
-        .bs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
-        .bs-libro {
-            display: grid; grid-template-columns: 100px 1fr; gap: 16px;
-            background: var(--bs-surface); border: 1px solid var(--bs-border); border-radius: 16px; padding: 14px;
-            transition: transform .15s, box-shadow .15s;
-        }
-        .bs-libro:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.08); }
-        .bs-cover { position: relative; width: 100px; height: 150px; border-radius: 6px; overflow: hidden; background: linear-gradient(135deg, #2c3e50, #1a252f); box-shadow: 0 4px 10px rgba(0,0,0,.2); }
-        .bs-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-        .bs-cover .sin { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; color: #fff; font: 700 11px/1.25 sans-serif; }
-        .bs-info { min-width: 0; display: flex; flex-direction: column; }
-        .bs-info h3 { margin: 0 0 4px; font-size: 1.05rem; line-height: 1.2; }
-        .bs-info h3 a { color: inherit; text-decoration: none; }
-        .bs-info h3 a:hover { color: var(--bs-accent); }
-        .bs-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .82rem; opacity: .8; margin-bottom: 8px; }
-        .bs-meta .anio { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--bs-border); }
-        .bs-desc { margin: 0 0 10px; font-size: .88rem; line-height: 1.5; opacity: .85; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .bs-acciones { margin-top: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .bs-ver { padding: 7px 16px; border-radius: 999px; background: var(--bs-accent); color: #fff; text-decoration: none; font-size: .85rem; font-weight: 700; }
-        .bs-ver:hover { opacity: .9; }
-        .bs-estado { font-size: .8rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(128,128,128,.14); }
-
-        .bs-vacio { text-align: center; padding: 30px 10px; }
-        .bs-vacio .ico { font-size: 2.6rem; }
-        .bs-vacio h2 { margin: 6px 0; }
-        .bs-vacio p { opacity: .7; margin: 0 0 16px; }
-
-        /* Barra inferior */
-        .floating-nav-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: calc(100% - 40px); max-width: 600px; }
-        .quick-nav-floating { display: flex; align-items: center; justify-content: space-around; padding: 8px 12px; background: rgba(255,255,255,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.6); border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
-        .nav-card-float { display: flex; flex-direction: column; align-items: center; padding: 6px 12px; text-decoration: none; color: #2d3748; font-weight: 600; font-size: .8rem; border-radius: 12px; transition: color .2s, transform .2s; }
-        .nav-card-float:hover, .nav-card-float.active { color: var(--bs-accent); transform: translateY(-2px); }
-        .nav-card-float .nav-icon { font-size: 1.25rem; margin-bottom: 2px; }
-
-        @media (max-width: 560px) {
-            .bs-hero { padding: 20px 16px; }
-            .bs-hero h1 { font-size: 1.5rem; }
-            .bs-form { flex-direction: column; }
-            .bs-btn { padding: 13px; }
-            .bs-grid { grid-template-columns: 1fr; }
-            .bs-libro { grid-template-columns: 84px 1fr; gap: 12px; }
-            .bs-cover { width: 84px; height: 126px; }
-        }
-        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-    </style>
+    
 </head>
 
-<body>
+<body class="page-buscar">
 <div class="bs-wrap">
 
     <!-- Buscador -->
@@ -289,7 +184,7 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
             <span>Perfil</span>
-            
+
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>

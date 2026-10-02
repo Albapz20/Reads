@@ -507,141 +507,12 @@ $metricas = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($titulo) ?></title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
     <script src="main.js"></script>
-    <style>
-        :root {
-            --lb-accent: var(--primary-color, var(--color-primario, #d87d8a));
-            --lb-border: var(--border-color, rgba(0,0,0,.09));
-            --lb-surface: var(--bg-card, #ffffff);
-        }
-        body { padding-bottom: 100px; }
-        .lb-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
-
-        /* ---- Cabecera ---- */
-        .lb-hero {
-            position: relative;
-            overflow: hidden;
-            border-radius: 22px;
-            border: 1px solid var(--lb-border);
-            background: var(--lb-surface);
-            margin-bottom: 18px;
-        }
-        .lb-hero-bg {
-            position: absolute; inset: -30px;
-            background-size: cover; background-position: center;
-            filter: blur(38px) saturate(1.3);
-            opacity: .38;
-        }
-        .lb-hero-inner {
-            position: relative;
-            display: grid;
-            grid-template-columns: 220px 1fr;
-            gap: 32px;
-            padding: 32px;
-            align-items: start;
-        }
-        .lb-cover img {
-            width: 100%; height: auto; display: block;
-            border-radius: 10px;
-            box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2);
-        }
-        .lb-info h1 { margin: 0 0 6px; font-size: 2rem; line-height: 1.15; }
-        .lb-author { margin: 0 0 16px; font-size: 1.05rem; opacity: .8; }
-        .lb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
-        .lb-chip {
-            padding: 5px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600;
-            background: rgba(255,255,255,.7); border: 1px solid var(--lb-border);
-        }
-
-        /* ---- Selector de estado ---- */
-        .lb-estado-label { font-size: .85rem; font-weight: 700; margin-bottom: 8px; display: block; opacity: .75; }
-        .lb-estados { display: flex; flex-wrap: wrap; gap: 8px; }
-        .lb-estados button {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 9px 16px; border-radius: 999px;
-            border: 1px solid var(--lb-border);
-            background: rgba(255,255,255,.85);
-            color: inherit; font: inherit; font-size: .88rem; font-weight: 600;
-            cursor: pointer; transition: background .15s, color .15s, border-color .15s;
-        }
-        .lb-estados button:hover { border-color: var(--lb-accent); }
-        .lb-estados button:focus-visible { outline: 3px solid var(--lb-accent); outline-offset: 2px; }
-        .lb-estados button.active { background: var(--lb-accent); border-color: var(--lb-accent); color: #fff; }
-        .lb-login-hint { font-size: .9rem; opacity: .8; }
-        .lb-login-hint a { color: var(--lb-accent); font-weight: 700; }
-
-        /* ---- Secciones ---- */
-        .lb-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; align-items: start; }
-        .lb-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-        .lb-card {
-            background: var(--lb-surface);
-            border: 1px solid var(--lb-border);
-            border-radius: 16px;
-            padding: 22px;
-        }
-        .lb-card h2 { margin: 0 0 14px; font-size: 1.15rem; }
-
-        .lb-desc { line-height: 1.65; margin: 0; }
-        .lb-desc { color: var(--text-color, inherit); white-space: normal; word-wrap: break-word; }
-        .lb-desc.clamp { max-height: 10.5em; overflow: hidden; }
-        .lb-more { margin-top: 10px; background: none; border: none; padding: 0; color: var(--lb-accent); font: inherit; font-weight: 700; cursor: pointer; }
-
-        /* Progreso */
-        .lb-prog-num { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-        .lb-prog-num strong { font-size: 1.6rem; }
-        .lb-bar { height: 10px; border-radius: 10px; background: rgba(0,0,0,.08); overflow: hidden; }
-        .lb-bar > div { height: 100%; background: var(--lb-accent); border-radius: 10px; }
-        .lb-link { display: inline-block; margin-top: 14px; color: var(--lb-accent); font-weight: 700; text-decoration: none; }
-        .lb-link:hover { text-decoration: underline; }
-
-        /* Puntuación */
-        .lb-rate { display: flex; flex-direction: column; gap: 14px; }
-        .lb-rate-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .lb-rate-row label { font-weight: 700; font-size: .92rem; }
-        .icon-selector { display: flex; gap: 4px; cursor: pointer; font-size: 1.6rem; user-select: none; }
-        .lb-btn {
-            width: 100%; margin-top: 6px; padding: 11px; border: none; border-radius: 12px;
-            background: var(--lb-accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer;
-        }
-        .lb-btn:hover { opacity: .92; }
-
-        /* Reseñas */
-        .lb-card textarea {
-            width: 100%; box-sizing: border-box; padding: 12px; border-radius: 12px;
-            border: 1px solid var(--lb-border); font: inherit; resize: vertical; margin-bottom: 10px;
-        }
-        .lb-review { padding: 14px 0; border-top: 1px solid var(--lb-border); }
-        .lb-review:first-of-type { border-top: none; padding-top: 0; }
-        .lb-review strong { display: block; margin-bottom: 4px; }
-        .lb-empty { margin: 0; opacity: .65; }
-
-        /* Comunidad */
-        .lb-media-row { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--lb-border); font-size: .92rem; }
-        .lb-media-row:first-of-type { border-top: none; }
-        .star.full, .star.half { color: #f5b301; }
-        .star.empty { color: #d5d5d5; }
-        .lb-stars-big { font-size: 1.5rem; margin-bottom: 8px; }
-
-        /* Barra inferior */
-        .floating-nav-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: calc(100% - 40px); max-width: 600px; }
-        .quick-nav-floating { display: flex; align-items: center; justify-content: space-around; padding: 8px 12px; background: rgba(255,255,255,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.6); border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
-        .nav-card-float { display: flex; flex-direction: column; align-items: center; padding: 6px 12px; text-decoration: none; color: #2d3748; font-weight: 600; font-size: .8rem; border-radius: 12px; transition: color .2s, transform .2s; }
-        .nav-card-float:hover { color: var(--lb-accent); transform: translateY(-2px); }
-        .nav-card-float .nav-icon { font-size: 1.25rem; margin-bottom: 2px; }
-
-        /* ---- Móvil ---- */
-        @media (max-width: 820px) {
-            .lb-grid { grid-template-columns: 1fr; }
-            .lb-hero-inner { grid-template-columns: 1fr; padding: 24px 18px; text-align: center; justify-items: center; }
-            .lb-cover { width: 170px; }
-            .lb-info h1 { font-size: 1.6rem; }
-            .lb-chips, .lb-estados { justify-content: center; }
-        }
-        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-    </style>
+  
 </head>
 
-<body>
+<body class="page-libro">>
 <div class="lb-wrap">
 
     <!-- Cabecera -->
@@ -806,6 +677,7 @@ $metricas = [
         <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
         <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi Perfil</span></a>
         <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
+        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
         <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
         <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
     </nav>

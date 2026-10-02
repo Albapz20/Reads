@@ -28,59 +28,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <title>Iniciar sesión</title>
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
 
-    <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-
-        .login-box {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            width: 350px;
-            text-align: center;
-        }
-
-        .login-box h1 {
-            margin-bottom: 20px;
-        }
-
-        .login-box input {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-        }
-
-        .login-box button {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            background: #4a90e2;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
-        }
-
-        .login-box button:hover {
-            background: #357ABD;
-        }
-
-        .mensaje-error {
-            color: red;
-            margin-bottom: 10px;
-        }
-    </style>
 </head>
 
-<body>
+<body class="page-login">
 
 <div class="login-box">
     <h1>Iniciar sesión</h1>

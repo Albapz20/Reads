@@ -61,6 +61,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
     <meta charset="UTF-8">
     <title>Editar perfil</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
 </head>
 
 <body>

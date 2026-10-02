@@ -99,6 +99,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <head>
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+<link rel="stylesheet" href="/Reads/public/css/styles.css">
 <title>Editar libro</title>
 </head>
 

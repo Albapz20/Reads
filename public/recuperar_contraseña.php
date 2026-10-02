@@ -44,64 +44,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <title>Recuperar contraseña</title>
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css">
 
-    <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-
-        .recuperar-box {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            width: 350px;
-            text-align: center;
-        }
-
-        .recuperar-box h1 {
-            margin-bottom: 20px;
-        }
-
-        .recuperar-box input {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-        }
-
-        .recuperar-box button {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            background: #4a90e2;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
-        }
-
-        .recuperar-box button:hover {
-            background: #357ABD;
-        }
-
-        .mensaje-error {
-            color: red;
-            margin-bottom: 10px;
-        }
-
-        .mensaje-ok {
-            color: green;
-            margin-bottom: 10px;
-        }
-    </style>
 </head>
 
-<body>
+<body class="page-recuperar-contraseña">
 
 <div class="recuperar-box">
     <h1>Recuperar contraseña</h1>
