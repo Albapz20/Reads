@@ -1,27 +1,29 @@
-/* ==========================================================
-   TEMA AZUL (Variables Globales)
-   ========================================================== */
+@import url("base.css");
+
 :root {
-    --color-bg: #ebf8ff;
-    --color-card: #ffffff;
-    --color-borde: #bee3f8;
-    --color-texto: #2c5282;
-    --color-subtexto: #4299e1;
-    --color-primario: #3182ce;
-    --color-texto-primario: #ffffff;
-}
+    --bg-main: #eef5ff;
+    --bg-card: #ffffff;
+    --bg-chip: #e6f0fd;
+    --border-color: #c9ddf5;
+    --text-color: #1e3a5f;
+    --text-muted: #5b7aa3;
 
-body {
-    background-color: var(--color-bg) !important;
-    color: var(--color-texto) !important;
-}
+    --primary-color: #2f6fd1;
+    --primary-contrast: #ffffff;
+    --primary-soft: #dce9fc;
+    --heading-color: #1f5bb8;
+    --link-color: #2f6fd1;
+    --progress-color: linear-gradient(90deg, #6aa7f5, #2f6fd1);
 
-.perfil-card, .panel {
-    background-color: var(--color-card);
-    border: 1px solid var(--color-borde);
-}
+    --bg-decor: radial-gradient(900px 500px at 100% -10%, #d6e8ff 0%, transparent 60%),
+                radial-gradient(700px 500px at 0% 0%, #e3f2ff 0%, transparent 55%);
+    --shadow-card: 0 6px 20px rgba(47, 111, 209, .10);
+    --nav-text: #35557f;
 
-.avatar-circle, .btn-primary, .tab-btn.active {
-    background-color: var(--color-primario);
-    color: var(--color-texto-primario);
+    --bg-biblioteca: #eef5ff;
+    --texto-biblioteca: #1e3a5f;
+    --madera-balda: linear-gradient(to bottom, #7fa8d9, #5f8bc4 40%, #3e66a0);
+    --borde-estanteria: #4a76b3;
+    --selector-bg: #ffffff;
+    --selector-borde: #c9ddf5;
 }

@@ -1,6 +1,51 @@
 <?php
 require_once __DIR__ . '/PortadasService.php';
 
+// Devuelve la ruta con ?v=<fecha de modificación>, para que el navegador recargue el archivo solo cuando cambia de verdad.
+function asset(string $ruta): string {
+    $archivo = $_SERVER['DOCUMENT_ROOT'] . $ruta;
+    $version = is_file($archivo) ? filemtime($archivo) : time();
+    return $ruta . '?v=' . $version;
+}
+function menu_flotante(?string $activa = null): string {
+    $items = [
+        'inicio'       => ['index.php',        '🏠', 'Inicio'],
+        'perfil'       => ['perfil.php',       '👤', 'Mi perfil'],
+        'biblioteca'   => ['biblioteca.php',   '📚', 'Mi estantería'],
+        'estadisticas' => ['estadisticas.php', '📊', 'Estadísticas'],
+        'calendario'   => ['calendario.php',   '📅', 'Calendario'],
+        'buscar'       => ['buscar.php',       '🔍', 'Buscar'],
+        'ajustes'      => ['ajustes.php',      '⚙️', 'Ajustes'],
+    ];
+ 
+    // Archivos que cuentan como cada sección
+    $porArchivo = [
+        'index.php'                 => 'inicio',
+        'perfil.php'                => 'perfil',
+        'biblioteca.php'            => 'biblioteca',
+        'estadisticas.php'          => 'estadisticas',
+        'estadisticas_estrellas.php'=> 'estadisticas',
+        'calendario.php'            => 'calendario',
+        'buscar.php'                => 'buscar',
+        'ajustes.php'               => 'ajustes',
+        'editar_perfil.php'         => 'ajustes',
+    ];
+ 
+    if ($activa === null) {
+        $activa = $porArchivo[basename($_SERVER['SCRIPT_NAME'] ?? '')] ?? '';
+    }
+ 
+    $html = '<div class="floating-nav-container"><nav class="quick-nav-floating" aria-label="Navegación principal">';
+    foreach ($items as $clave => [$url, $icono, $texto]) {
+        $esActivo = ($clave === $activa);
+        $html .= '<a href="' . $url . '" class="nav-card-float' . ($esActivo ? ' active' : '') . '"'
+               . ($esActivo ? ' aria-current="page"' : '') . '>'
+               . '<span class="nav-icon" aria-hidden="true">' . $icono . '</span>'
+               . '<span>' . $texto . '</span></a>';
+    }
+    return $html . '</nav></div>';
+}
+ 
 function obtenerPortadaValida(?string $url, ?int $libroId = null): string {
     static $descargasEnEstaCarga = 0;
     $maxDescargasPorCarga = 3;

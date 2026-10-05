@@ -393,7 +393,7 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
 <script src="main.js"></script>
 <title>Estadísticas de lectura</title>
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-<link rel="stylesheet" href="/Reads/public/css/styles.css">
+<link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 </head>
@@ -612,18 +612,23 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
+
         <a href="index.php" class="nav-card-float">
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
+
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>
-         <a href="biblioteca.php" class="nav-card-float">
+        <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
         </a>
+        <a href="estadisticas.php" class="nav-card-float active">
+            <span class="nav-icon">📊</span>
+            <span>Estadísticas</span>
         
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
@@ -634,7 +639,8 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
-         <a href="ajustes.php" class="nav-card-float">
+
+          <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>

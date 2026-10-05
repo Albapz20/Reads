@@ -1,0 +1,147 @@
+/* Base estructural de todos los temas*/
+
+:root {
+    color-scheme: light;
+
+    /*  Valores por defecto (cada tema los sobrescribe)  */
+    --bg-main: #f7f7f7;
+    --bg-card: #ffffff;
+    --bg-chip: #f1f1f1;
+    --border-color: #dddddd;
+    --border-width: 1px;
+    --text-color: #222222;
+    --text-muted: #666666;
+
+    --primary-color: #333333;      /* botones, acentos, barras */
+    --primary-contrast: #ffffff;   /* texto sobre --primary-color */
+    --primary-soft: #eeeeee;       /* versión suave del primario */
+    --heading-color: var(--primary-color);
+    --link-color: var(--primary-color);
+    --progress-color: var(--primary-color);
+    --star-color: #f5b301;
+
+    --bg-decor: none;              /* degradados decorativos del fondo */
+    --shadow-card: 0 4px 14px rgba(0, 0, 0, .06);
+    --radius: 16px;
+    --glass: rgba(255, 255, 255, .85);   /* píldoras sobre cabeceras */
+    --nav-bg: rgba(255, 255, 255, .92);
+    --nav-text: #2d3748;
+
+    --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-heading: var(--font-body);
+
+    /* Biblioteca */
+    --bg-biblioteca: var(--bg-main);
+    --texto-biblioteca: var(--text-color);
+    --madera-balda: linear-gradient(to bottom, #8c5638, #6f3f26 40%, #4a2817);
+    --borde-estanteria: #8d5b4c;
+    --selector-bg: var(--bg-card);
+    --selector-borde: var(--border-color);
+
+    /*  Alias para el CSS */
+    --card-bg: var(--bg-card);
+    --chip-bg: var(--bg-chip);
+    --text-main: var(--text-color);
+    --accent-blue: var(--primary-color);
+    --accent-color: var(--primary-color);
+    --color-primario: var(--primary-color);
+    --color-principal: var(--primary-color);
+    --primary: var(--primary-color);
+    --main-color: var(--primary-color);
+    --avatar-bg: var(--primary-color);
+    --avatar-text: var(--primary-contrast);
+    --btn-sec-bg: var(--bg-chip);
+    --color-bg: var(--bg-main);
+    --color-card: var(--bg-card);
+    --color-borde: var(--border-color);
+    --color-texto: var(--text-color);
+    --color-subtexto: var(--text-muted);
+    --color-texto-primario: var(--primary-contrast);
+
+    accent-color: var(--primary-color);
+}
+
+/*  Página  */
+body {
+    font-family: var(--font-body);
+    color: var(--text-color);
+    background: var(--bg-decor), var(--bg-main);
+    background-attachment: fixed;
+}
+::selection { background: var(--primary-soft); color: var(--text-color); }
+h1, h2, h3 { font-family: var(--font-heading); }
+
+.container { max-width: 1000px; margin: auto; padding: 20px; }
+
+.panel, .perfil-card {
+    background: var(--bg-card);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-card);
+}
+.panel-header h1, .panel-header h2 { color: var(--heading-color); }
+
+.review-card, .panel-libro-item {
+    background: var(--bg-chip);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+/*  Botones, enlaces, formularios  */
+button, .btn-primary {
+    background: var(--primary-color);
+    color: var(--primary-contrast);
+    border: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    font-family: inherit;
+    transition: filter .15s;
+}
+button:hover, .btn-primary:hover { filter: brightness(1.08); }
+
+a { color: var(--link-color); font-weight: 700; }
+
+/* :where() deja la especificidad en 0: las clases de cada página siempre ganan */
+:where(input:not([type=checkbox], [type=radio], [type=file], [type=hidden], [type=range], [type=submit]), select, textarea) {
+    font-family: inherit;
+    color: var(--text-color);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+:where(input, select, textarea):focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+.barra-progreso, .barra-progreso-bg { background: var(--bg-chip); height: 10px; border-radius: 6px; overflow: hidden; }
+.barra-progreso-inner, .barra-progreso-fill { background: var(--progress-color); height: 100%; border-radius: 6px; }
+
+.star.full, .star.half { color: var(--star-color); }
+
+/* Compatibilidad con componentes de las páginas */
+
+/* Barra de navegación flotante */
+body .quick-nav-floating { background: var(--nav-bg); border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+body .nav-card-float { color: var(--nav-text); }
+body .nav-card-float:hover, body .nav-card-float.active { color: var(--primary-color); }
+
+/* Píldoras de libro.php y biblioteca.php */
+body .lb-estados button, body .lb-chip, body .pestana { background: var(--glass); color: var(--text-color); }
+body .pestana { color: var(--texto-biblioteca); }
+body .pestana:hover { background: var(--bg-chip); }
+
+/* Inicio (index.php) */
+body .input-text-hero { background: var(--bg-card); color: var(--text-color); border-color: var(--border-color); }
+body #sugerencias { background: var(--bg-card); border-color: var(--border-color); }
+body #sugerencias div { border-bottom-color: var(--border-color); }
+body #sugerencias div:hover { background: var(--bg-chip); }
+body .Reads-reading-hero { background: var(--bg-card); border-color: var(--border-color); }
+body .Reads-author { color: var(--text-muted); }
+body .Reads-tag { color: var(--primary-color); background: var(--primary-soft); }
+body .stat-card-index, body .progreso-global-box { background: var(--bg-card); }
+body .barra-progreso-bg { background: var(--bg-chip); }

@@ -1,32 +1,33 @@
+@import url("base.css");
+
 :root {
-    /* Perfil y General */
-    --bg-main: #2c221e;
-    --card-bg: #3d302a;
-    --chip-bg: #4a3b34;
-    --border-color: #d4a373;
-    --text-main: #fefae0;
-    --text-muted: #e9edc9;
-    --accent-blue: #dda15e;
-    --btn-sec-bg: #4a3b34;
-    --avatar-bg: #d4a373;
-    --avatar-text: #2c221e;
+    color-scheme: dark;
+    --bg-main: #231a16;
+    --bg-card: #2e231e;
+    --bg-chip: #3a2d26;
+    --border-color: #5a4538;
+    --text-color: #f5ead7;
+    --text-muted: #cdb9a0;
 
-    /* Biblioteca y Estanterías */
-    --bg-biblioteca: #2c221e;
-    --texto-biblioteca: #fefae0;
+    --primary-color: #b8692d;
+    --primary-contrast: #ffffff;
+    --primary-soft: rgba(184, 105, 45, .28);
+    --heading-color: #eab676;
+    --link-color: #eab676;
+    --progress-color: linear-gradient(90deg, #e0a35a, #b8692d);
+    --star-color: #ffc94d;
+
+    --bg-decor: radial-gradient(900px 500px at 100% -10%, rgba(184, 105, 45, .20) 0%, transparent 60%),
+                radial-gradient(700px 500px at 0% 0%, rgba(234, 182, 118, .08) 0%, transparent 55%);
+    --shadow-card: 0 8px 24px rgba(0, 0, 0, .35);
+    --glass: rgba(58, 45, 38, .88);
+    --nav-bg: rgba(46, 35, 30, .94);
+    --nav-text: #e8d7bd;
+
+    --bg-biblioteca: #231a16;
+    --texto-biblioteca: #f5ead7;
     --madera-balda: linear-gradient(to bottom, #8c5638, #6f3f26 40%, #4a2817);
-    --borde-estanteria: #d4a373;
-    --selector-bg: #3d302a;
-    --selector-borde: #d4a373;
+    --borde-estanteria: #b07a4a;
+    --selector-bg: #2e231e;
+    --selector-borde: #8a6a4f;
 }
-
-body { background: var(--bg-main); color: var(--text-main); font-family: "Segoe UI", sans-serif; }
-.container { max-width: 1000px; margin: auto; padding: 20px; }
-.panel, .perfil-card { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
-.panel-header h1, .panel-header h2 { color: var(--accent-blue); }
-.review-card, .panel-libro-item { background: var(--chip-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 15px; margin-bottom: 15px; }
-button, .btn-primary { background: var(--avatar-bg); color: var(--avatar-text); border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; }
-button:hover { filter: brightness(1.1); }
-a { color: var(--accent-blue); font-weight: bold; }
-.barra-progreso, .barra-progreso-bg { background: var(--chip-bg); height: 10px; border-radius: 6px; }
-.barra-progreso-inner, .barra-progreso-fill { background: var(--accent-blue); height: 100%; }

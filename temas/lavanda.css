@@ -1,0 +1,29 @@
+@import url("base.css");
+
+:root {
+    --bg-main: #f6f2ff;
+    --bg-card: #ffffff;
+    --bg-chip: #efe8ff;
+    --border-color: #dccffa;
+    --text-color: #2e1f4d;
+    --text-muted: #7a68a6;
+
+    --primary-color: #7c4dcc;
+    --primary-contrast: #ffffff;
+    --primary-soft: #ece3ff;
+    --heading-color: #6a3fb8;
+    --link-color: #7c4dcc;
+    --progress-color: linear-gradient(90deg, #b794f4, #7c4dcc);
+
+    --bg-decor: radial-gradient(900px 500px at 0% -10%, #e6d9ff 0%, transparent 60%),
+                radial-gradient(700px 500px at 100% 10%, #ffd9f0 0%, transparent 55%);
+    --shadow-card: 0 6px 20px rgba(124, 77, 204, .12);
+    --nav-text: #5a4690;
+
+    --bg-biblioteca: #f6f2ff;
+    --texto-biblioteca: #2e1f4d;
+    --madera-balda: linear-gradient(to bottom, #a98be0, #8a66cf 40%, #5f3fa3);
+    --borde-estanteria: #7c4dcc;
+    --selector-bg: #ffffff;
+    --selector-borde: #dccffa;
+}

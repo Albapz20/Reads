@@ -1,2 +1,2 @@
-src/config.local.php
+config/config.local.php
 public/diagnostico_descripcion.php

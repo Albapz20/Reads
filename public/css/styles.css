@@ -1,5 +1,40 @@
+/* ==========================================================================
+   READS · Hoja de estilos única
+   Ubicación:  Reads/css/styles.css
+   Enlace:     <link rel="stylesheet" href="/Reads/css/styles.css">
+               (siempre DESPUÉS del <link> del tema)
 
-/* Variables */
+   Cada página lleva una clase en su <body> para acotar sus estilos:
+
+     index.php               <body class="page-index">
+     ajustes.php / editar…   <body class="page-ajustes">
+     perfil.php              <body class="page-perfil">
+     biblioteca.php          <body class="page-biblioteca">
+     estadisticas.php        <body class="page-estadisticas">
+     buscar.php              <body class="page-buscar">
+     libro.php               <body class="page-libro">
+     calendario.php          <body class="page-calendario">
+     editar_libro.php        <body class="page-editar-libro">
+     (página de páginas)     <body class="page-paginas">
+     perfil de otro usuario  <body class="page-perfil-publico">
+     login / registro /
+     recuperar contraseña    <body class="page-auth"> (valen también page-login,
+                                       page-registro y page-recuperar)
+
+   ÍNDICE
+     1. Variables
+     2. Body de cada página
+     3. Componentes comunes (menú flotante, barras, tarjetas, modales)
+     4. index          5. ajustes        6. perfil        7. biblioteca
+     8. estadísticas   9. buscar        10. libro        11. calendario
+    12. editar libro  13. páginas       14. perfil público
+    15. login / registro / recuperar    16. accesibilidad
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. VARIABLES
+   ========================================================================== */
 :root {
     --rd-accent:  var(--primary-color, var(--color-primario, #d87d8a));
     --rd-border:  var(--border-color, rgba(0, 0, 0, .09));
@@ -10,15 +45,12 @@
 .page-index { --rd-accent: var(--primary-color, var(--color-principal, #2c3e50)); }
 
 .page-perfil,
-.page-ajustes {
-    --rd-accent: var(--color-primario, #2d5a27);
-    --rd-nav-accent: var(--color-primario, #d87d8a);
-}
-
-.page-biblioteca { --rd-nav-accent: var(--borde-estanteria, #8d5b4c); }
+.page-ajustes { --rd-accent: var(--color-primario, #2d5a27); }
 
 
-/* Body de cada página */
+/* ==========================================================================
+   2. BODY DE CADA PÁGINA
+   ========================================================================== */
 body.modal-open { overflow: hidden; }
 
 .page-index { padding-bottom: 90px; }
@@ -64,66 +96,100 @@ body.modal-open { overflow: hidden; }
     margin: 0 auto;
 }
 
-.page-auth {
+.page-auth,
+.page-login,
+.page-registro,
+.page-recuperar {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
 
-/* Componentes comunes */
-/*  Menú flotante inferior (el mismo en todas las páginas)  */
+/* ==========================================================================
+   3. COMPONENTES COMUNES
+   ========================================================================== */
+
+/* ---- Menú flotante inferior (el mismo en todas las páginas) ---- */
 .floating-nav-container {
     position: fixed !important;
-    bottom: 20px !important;
+    bottom: 16px !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
     z-index: 999999 !important;
-    width: calc(100% - 40px) !important;
-    max-width: 600px !important;
+    width: calc(100% - 32px) !important;
+    max-width: 720px !important;
     display: block !important;
 }
 
 .quick-nav-floating {
     display: flex !important;
-    align-items: center;
-    justify-content: space-around;
-    padding: 8px 12px;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px;
+    /* mismo tipo de letra en todas las páginas (antes heredaba el del body) */
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: rgba(255, 255, 255, .94);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(0, 0, 0, .08);
-    border-radius: 20px;
+    border-radius: 22px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
 }
 
 .nav-card-float {
     display: flex !important;
+    flex: 1 1 0;                 /* todos los botones reparten el ancho por igual */
+    min-width: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 6px 12px;
+    gap: 2px;
+    padding: 8px 4px;
     text-decoration: none;
     color: #2d3748;
+    font-size: .78rem;
     font-weight: 600;
-    font-size: .8rem;
-    border-radius: 12px;
-    transition: color .2s, transform .2s;
+    line-height: 1.15;
+    text-align: center;
+    white-space: nowrap;         /* "Mi perfil" ya no se parte en dos líneas */
+    border-radius: 16px;
+    transition: color .2s, background .2s, transform .2s;
 }
+.nav-card-float .nav-icon { font-size: 1.3rem; line-height: 1; }
 
-.nav-card-float:hover,
-.nav-card-float.active {
-    color: var(--rd-nav-accent, var(--rd-accent));
+.nav-card-float:hover {
+    color: var(--rd-accent);
+    background: rgba(0, 0, 0, .05);
     transform: translateY(-2px);
     text-decoration: none;
 }
 
-.nav-card-float .nav-icon { font-size: 1.25rem; margin-bottom: 2px; }
+/* Página actual: fondo + negrita + color (se nota aunque el color del tema sea oscuro) */
+.nav-card-float.active {
+    color: var(--rd-accent);
+    background: rgba(0, 0, 0, .08);
+    font-weight: 800;
+}
 
-.page-biblioteca .quick-nav-floating { font-family: system-ui, sans-serif; }
+@media (max-width: 760px) {
+    .nav-card-float { font-size: .7rem; padding: 8px 2px; }
+    .nav-card-float .nav-icon { font-size: 1.2rem; }
+}
 
-/*  Barra de progreso (index y perfil)  */
+/* Móvil: solo iconos, y el nombre únicamente en la página actual */
+@media (max-width: 560px) {
+    .nav-card-float > span:not(.nav-icon) { display: none; }
+    .nav-card-float.active { flex: 2.2 1 0; }
+    .nav-card-float.active > span:not(.nav-icon) { display: inline; }
+    .nav-card-float .nav-icon { font-size: 1.35rem; }
+}
+
+/* ---- Barra de progreso (index y perfil) ---- */
 .barra-progreso-bg {
     height: 10px;
     background: rgba(0, 0, 0, .08);
@@ -140,16 +206,16 @@ body.modal-open { overflow: hidden; }
     transition: width .4s ease;
 }
 
-/*  Texto de "sin datos"  */
+/* ---- Texto de "sin datos" ---- */
 .vacio { margin: 0; opacity: .65; font-size: .9rem; }
 
-/*  Contenedores centrados de las páginas nuevas  */
+/* ---- Contenedores centrados de las páginas nuevas ---- */
 .st-wrap, .bs-wrap, .cal-wrap, .lb-wrap { margin: 0 auto; padding: 20px 16px; }
 .st-wrap, .bs-wrap { max-width: 980px; }
 .cal-wrap { max-width: 1060px; }
 .lb-wrap  { max-width: 920px; padding: 16px; }
 
-/*  Tarjetas  */
+/* ---- Tarjetas ---- */
 .st-card, .bs-card, .cal-card, .lb-card {
     background: var(--rd-surface);
     border: 1px solid var(--rd-border);
@@ -160,7 +226,7 @@ body.modal-open { overflow: hidden; }
 .bs-card  { border-radius: 18px; margin-bottom: 20px; }
 .cal-card { padding: 20px; }
 
-/*  Tarjetas de resumen (KPIs)  */
+/* ---- Tarjetas de resumen (KPIs) ---- */
 .st-kpi, .cal-kpi {
     background: var(--rd-surface);
     border: 1px solid var(--rd-border);
@@ -177,7 +243,7 @@ body.modal-open { overflow: hidden; }
 .st-kpi  { border-radius: 16px; padding: 16px 18px; }
 .cal-kpi { border-radius: 14px; padding: 14px 16px; }
 
-/*  Portada generada cuando un libro no tiene imagen  */
+/* ---- Portada generada cuando un libro no tiene imagen ---- */
 .cubierta-generada,
 .cubierta-generada-card {
     width: 100%;
@@ -189,6 +255,8 @@ body.modal-open { overflow: hidden; }
     box-sizing: border-box;
     text-align: center;
 }
+/* OJO: .cubierta-generada NO lleva display:flex a propósito; la página la
+   muestra con JavaScript cuando la imagen falla. */
 .cubierta-generada-card {
     display: flex;
     justify-content: center;
@@ -197,7 +265,7 @@ body.modal-open { overflow: hidden; }
     box-shadow: 0 3px 8px rgba(0, 0, 0, .2);
 }
 
-/*  Ventanas emergentes (<dialog>)  */
+/* ---- Ventanas emergentes (<dialog>) ---- */
 .modal-libro,
 .modal-dia {
     padding: 0;
@@ -238,7 +306,9 @@ body.modal-open { overflow: hidden; }
 .modal-cuerpo { padding: 22px; overflow-y: auto; }
 
 
-/* Index */
+/* ==========================================================================
+   4. INDEX
+   ========================================================================== */
 .welcome-header { margin-bottom: 25px; }
 .welcome-header h1 { font-size: 1.8rem; margin-bottom: 5px; }
 
@@ -509,7 +579,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Ajustes */
+/* ==========================================================================
+   5. AJUSTES / PERSONALIZAR
+   ========================================================================== */
 .page-ajustes .container { max-width: 820px; margin: 0 auto; }
 
 .header-section { margin-bottom: 25px; }
@@ -590,7 +662,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Perfil */
+/* ==========================================================================
+   6. PERFIL
+   ========================================================================== */
 .page-perfil .container { max-width: 950px; margin: 0 auto; }
 
 .perfil-card {
@@ -846,7 +920,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Biblioteca */
+/* ==========================================================================
+   7. BIBLIOTECA (estantería)
+   ========================================================================== */
 .biblioteca-wrapper { width: 100%; max-width: 980px; margin: 0 auto; }
 
 .biblioteca-header {
@@ -1015,7 +1091,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Estadisticas */
+/* ==========================================================================
+   8. ESTADÍSTICAS
+   ========================================================================== */
 .st-header { margin-bottom: 18px; }
 .st-header h1 { margin: 0 0 4px; font-size: 1.9rem; }
 .st-header p { margin: 0; opacity: .7; }
@@ -1178,7 +1256,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Buscar */
+/* ==========================================================================
+   9. BUSCAR
+   ========================================================================== */
 .bs-hero {
     background: var(--rd-surface);
     border: 1px solid var(--rd-border);
@@ -1285,7 +1365,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Ficha libro */
+/* ==========================================================================
+   10. LIBRO (ficha)
+   ========================================================================== */
 .lb-hero {
     position: relative;
     overflow: hidden;
@@ -1383,7 +1465,9 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Calendario */
+/* ==========================================================================
+   11. CALENDARIO
+   ========================================================================== */
 .cal-header h1 { margin: 0 0 4px; font-size: 1.9rem; }
 .cal-header p { margin: 0 0 18px; opacity: .7; }
 
@@ -1496,7 +1580,9 @@ details.form-lanzamiento summary { font-weight: 700; cursor: pointer; font-size:
 }
 
 
-/* Editar libro */
+/* ==========================================================================
+   12. EDITAR LIBRO
+   ========================================================================== */
 .page-editar-libro button {
     background-color: #2c3e50;
     color: #fff;
@@ -1531,7 +1617,9 @@ details.form-lanzamiento summary { font-weight: 700; cursor: pointer; font-size:
 .enlace-volver { display: inline-block; margin-top: 25px; color: #555; text-decoration: none; font-weight: bold; }
 
 
-/* Páginas de pginas */
+/* ==========================================================================
+   13. PÁGINA DE PÁGINAS (corregir páginas totales)
+   ========================================================================== */
 .header-box { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, .06); margin-bottom: 20px; }
 .actions-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
 
@@ -1561,7 +1649,9 @@ details.form-lanzamiento summary { font-weight: 700; cursor: pointer; font-size:
 .progress-fill { height: 100%; background: #0078ff; width: 0%; transition: width .3s; }
 
 
-/* ´Perfil público */
+/* ==========================================================================
+   14. PERFIL PÚBLICO (de otro usuario)
+   ========================================================================== */
 .page-perfil-publico .container { max-width: 680px; margin: 0 auto; padding: 20px; }
 .page-perfil-publico .panel { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0, 0, 0, .04); }
 .page-perfil-publico .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
@@ -1573,37 +1663,92 @@ details.form-lanzamiento summary { font-weight: 700; cursor: pointer; font-size:
 .page-perfil-publico .acciones-perfil a { background: #f1f3f5; padding: 6px 12px; border-radius: 20px; text-decoration: none; font-size: .85rem; color: #333; display: inline-block; }
 
 
-/* Login · Registro · Recuperar contraseña */
+/* ==========================================================================
+   15. LOGIN · REGISTRO · RECUPERAR CONTRASEÑA
+   (el <body> puede ser page-auth, page-login, page-registro o page-recuperar)
+   ========================================================================== */
 .login-box,
 .registro-box,
 .recuperar-box {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 380px;
     background: #fff;
-    padding: 30px;
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, .1);
-    width: 350px;
+    padding: 34px 30px 28px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .1);
     text-align: center;
 }
+
 .login-box h1,
 .registro-box h1,
-.recuperar-box h1 { margin-bottom: 20px; }
+.recuperar-box h1 { margin: 0 0 22px; font-size: 1.7rem; }
+
+.login-box form,
+.registro-box form,
+.recuperar-box form { display: flex; flex-direction: column; gap: 12px; }
 
 .login-box input,
 .registro-box input,
-.recuperar-box input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #ccc; }
+.recuperar-box input {
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #d5dbe5;
+    font: inherit;
+    font-size: .95rem;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+.login-box input:focus,
+.registro-box input:focus,
+.recuperar-box input:focus {
+    border-color: var(--rd-accent);
+    box-shadow: 0 0 0 3px rgba(216, 125, 138, .2);
+}
 
 .login-box button,
 .registro-box button,
-.recuperar-box button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: #4a90e2; color: #fff; font-size: 16px; cursor: pointer; }
+.recuperar-box button {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 4px;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--rd-accent);
+    color: #fff;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s, transform .15s;
+}
 .login-box button:hover,
 .registro-box button:hover,
-.recuperar-box button:hover { background: #357abd; }
+.recuperar-box button:hover { opacity: .92; transform: translateY(-1px); }
 
-.mensaje-error { color: red; margin-bottom: 10px; }
-.mensaje-ok { color: green; margin-bottom: 10px; }
+.login-box a,
+.registro-box a,
+.recuperar-box a { color: var(--rd-accent); font-weight: 700; }
+
+.mensaje-error,
+.mensaje-ok {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: .9rem;
+    text-align: left;
+}
+.mensaje-error { background: #fdecea; color: #b3261e; }
+.mensaje-ok    { background: #e6f4ea; color: #137333; }
 
 
-/* Accesibilidad */
+/* ==========================================================================
+   16. ACCESIBILIDAD
+   ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
 }

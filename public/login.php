@@ -1,6 +1,7 @@
 <?php
 require_once "../src/UserService.php";
 require_once "../src/Auth.php";
+require_once "../src/Helpers.php";
 
 $tema = "pastel";
 
@@ -28,7 +29,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <title>Iniciar sesión</title>
     <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
 
 </head>
 

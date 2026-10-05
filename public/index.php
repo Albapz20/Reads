@@ -2,7 +2,7 @@
 require_once "../src/Auth.php";
 require_once "../src/Database.php";
 require_once "../src/UserService.php";
-require_once __DIR__ . '/../src/helpers.php';
+require_once "../src/helpers.php";
 
 $usuario = Auth::usuario();
 
@@ -132,7 +132,7 @@ function e($texto) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= e($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
     <script src="main.js"></script>
     <title>Inicio - Dashboard Reads</title>
 </head>
@@ -369,7 +369,12 @@ function e($texto) {
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
 
-        <a href="perfil.php" class="nav-card-float active">
+        <a href="index.php" class="nav-card-float active">
+            <span class="nav-icon">🏠</span>
+            <span>Inicio</span>
+        </a>
+
+        <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>

@@ -282,17 +282,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
     }
 }
 
-// Configuración de las 9 tarjetas de temas
+// Configuración de las tarjetas de temas
 $temasDisponibles = [
-    'pastel'      => ['nombre' => 'Pastel', 'icono' => '🌸', 'bg' => '#fdf0f2', 'border' => '#e8a5b2', 'text' => '#4a2c32'],
-    'sand'        => ['nombre' => 'Sand', 'icono' => '🏖️', 'bg' => '#fbf7ee', 'border' => '#d9c9a3', 'text' => '#4a3f2c'],
-    'dracula'     => ['nombre' => 'Dracula', 'icono' => '🐉', 'bg' => '#383a59', 'border' => '#ff79c6', 'text' => '#f8f8f2'],
-    'coffee'      => ['nombre' => 'Coffee', 'icono' => '☕', 'bg' => '#f5efe6', 'border' => '#c2b09b', 'text' => '#3e2723'],
-    'dark'        => ['nombre' => 'Dark / Slate', 'icono' => '🔮', 'bg' => '#2d3748', 'border' => '#4a5568', 'text' => '#edf2f7'],
-    'minimalista' => ['nombre' => 'Minimalista', 'icono' => '📐', 'bg' => '#ffffff', 'border' => '#cbd5e1', 'text' => '#1e293b'],
-    'sunset'      => ['nombre' => 'Sunset', 'icono' => '🌅', 'bg' => '#fff5eb', 'border' => '#f97316', 'text' => '#431407'],
-    'azul'        => ['nombre' => 'Azul Calmado', 'icono' => '💙', 'bg' => '#f0f7ff', 'border' => '#3b82f6', 'text' => '#1e3a8a'],
-    'naturalista' => ['nombre' => 'Naturalista', 'icono' => '🌿', 'bg' => '#f4f7f4', 'border' => '#4d7c0f', 'text' => '#14532d']
+    'pastel'      => ['nombre' => 'Pastel',      'icono' => '🌸', 'bg' => '#fff5f9', 'border' => '#ffd3e4', 'text' => '#4a3340'],
+    'naturalista' => ['nombre' => 'Naturalista', 'icono' => '🌿', 'bg' => '#f1f6ec', 'border' => '#cadcbf', 'text' => '#2b3a2b'],
+    'azul'        => ['nombre' => 'Azul',        'icono' => '💙', 'bg' => '#eef5ff', 'border' => '#c9ddf5', 'text' => '#1e3a5f'],
+    'sunset'      => ['nombre' => 'Sunset',      'icono' => '🌅', 'bg' => '#fff6ee', 'border' => '#fdd3a8', 'text' => '#4a1d0c'],
+    'lavanda'     => ['nombre' => 'Lavanda',     'icono' => '💜', 'bg' => '#f6f2ff', 'border' => '#dccffa', 'text' => '#2e1f4d'],
+    'coffee'      => ['nombre' => 'Café',        'icono' => '☕', 'bg' => '#2e231e', 'border' => '#5a4538', 'text' => '#f5ead7'],
+    'dracula'     => ['nombre' => 'Dracula',     'icono' => '🐉', 'bg' => '#343746', 'border' => '#565a7e', 'text' => '#f8f8f2'],
 ];
 ?>
 <!DOCTYPE html>
@@ -302,7 +300,7 @@ $temasDisponibles = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ajustes de la aplicación</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
 </head>
 <body class="page-ajustes">
 
@@ -322,7 +320,7 @@ $temasDisponibles = [
 
     <!-- Estilo Visual y Temas -->
     <div class="panel card-panel">
-        <h2 class="card-title">🎨 Estilo Visual & Temas (9)</h2>
+        <h2 class="card-title">🎨 Estilo Visual & Temas</h2>
         <p class="card-subtitle">Elige la paleta visual que mejor se adapte a tu estado de ánimo o momento del día:</p>
 
         <form method="POST" id="formTema">
@@ -446,19 +444,17 @@ $temasDisponibles = [
         </form>
     </div>
 
-    <div style="text-align: center; margin-top: 20px;">
-        <a href="perfil.php" style="text-decoration: none; font-size: 0.9rem; font-weight: 600;">← Volver al perfil</a>
-    </div>
-
 </div>
 
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
+
         <a href="index.php" class="nav-card-float">
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
+
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
@@ -470,14 +466,20 @@ $temasDisponibles = [
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        </a>
-         <a href="calendario.php" class="nav-card-float">
+        
+        <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
             <span>Calendario</span>   
         </a>
+        
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
+        </a>
+
+          <a href="ajustes.php" class="nav-card-float active">
+            <span class="nav-icon">⚙️</span>
+            <span>Ajustes</span>
         </a>
     </nav>
 </div>

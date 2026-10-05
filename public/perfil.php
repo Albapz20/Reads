@@ -389,7 +389,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
     <script src="/Reads/public/main.js"></script>
     <title>Mi perfil</title>
 
@@ -469,12 +469,17 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
-    <nav class="quick-nav-floating">
+   <nav class="quick-nav-floating">
+
         <a href="index.php" class="nav-card-float">
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
 
+        <a href="perfil.php" class="nav-card-float active">
+            <span class="nav-icon">👤</span>
+            <span>Mi perfil</span>
+        </a>
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
@@ -482,17 +487,18 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        </a>
+        
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
             <span>Calendario</span>   
         </a>
-
+        
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
-        <a href="ajustes.php" class="nav-card-float">
+
+          <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
