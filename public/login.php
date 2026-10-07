@@ -28,8 +28,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <head>
     <meta charset="UTF-8">
     <title>Iniciar sesión</title>
-    <link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 
 </head>
 

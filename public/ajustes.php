@@ -299,8 +299,8 @@ $temasDisponibles = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ajustes de la aplicación</title>
-    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 </head>
 <body class="page-ajustes">
 

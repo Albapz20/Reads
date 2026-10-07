@@ -388,8 +388,8 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <script src="/Reads/public/main.js"></script>
     <title>Mi perfil</title>
 
@@ -417,7 +417,6 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 
             <div class="perfil-acciones-destacadas">
                 <a href="ajustes.php" class="btn-banner">⚙️ Ajustes</a>
-                <a href="editar_perfil.php" class="btn-banner">🎨 Personalizar</a>
                 <a href="logout.php" class="btn-banner btn-danger" title="Cerrar sesión">🚪</a>
             </div>
         </div>

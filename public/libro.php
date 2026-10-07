@@ -7,6 +7,7 @@ require_once "../src/ReviewService.php";
 require_once "../src/RatingService.php";
 require_once "../src/ListaService.php";
 require_once "../src/UserService.php";
+require_once "../src/PortadasVerificadas.php";   
 
 $authUser = Auth::usuario();
 $reviewService = new ReviewService();
@@ -22,6 +23,7 @@ if ($authUser) {
     $datos = $userService->obtenerUsuarioPorId($authUser["id"]);
     $tema = $datos["tema_visual"] ?? "pastel";
 }
+$tema = strtolower(trim($tema));
 
 function renderStars($rating) {
     $full = floor($rating);
@@ -92,7 +94,7 @@ if (isset($libroAPI["volumeInfo"])) {
     $idioma = $info["language"] ?? "";
     $paginasTotalesAPI = (int)($info["pageCount"] ?? 0);
 } else {
-    // OPEN LIBRARY 
+    // ---- OPEN LIBRARY ----
     $proveedor = "open_library";
     $titulo = $libroAPI["title"] ?? "Sin título";
 
@@ -144,7 +146,7 @@ if (!function_exists('lbJson')) {
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_CONNECTTIMEOUT => 3,
             CURLOPT_TIMEOUT        => 5,
-            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (contacto@tudominio.com)',
+            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (' . (defined('APP_CONTACTO') ? APP_CONTACTO : 'contacto') . ')',
         ]);
         $resp = curl_exec($ch);
         curl_close($ch);
@@ -157,7 +159,11 @@ $sinDesc = function ($d) {
 
 if (session_status() === PHP_SESSION_NONE) @session_start();
 $claveFallo = 'desc_fail_' . md5($id_externo . '|' . $titulo);
+// Si ya falló hace menos de 6 h, no repetir las búsquedas externas (con ?debug sí se repiten)
 $saltarRescates = !isset($_GET['debug']) && isset($_SESSION[$claveFallo]) && (time() - $_SESSION[$claveFallo]) < 6 * 3600;
+
+// La clave de Google Books vive en config/config.local.php (ya no está en el código)
+$apiKey = (string)config('google_books_key', '');
 
 // Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
 if ($sinDesc($descripcion)) {
@@ -184,24 +190,19 @@ if ($sinDesc($descripcion)) {
     }
 }
 
-// Descripción y portada de rescate con Google Books
-if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin descripción disponible." || strpos($portada, 'placehold.co') !== false)) {
-
-    $apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: '';
-    $archivoConfig = __DIR__ . '/../config/config.local.php';
-    if ($apiKey === '' && is_file($archivoConfig)) {
-        $cfg = require $archivoConfig;
-        $apiKey = is_array($cfg) ? (string)($cfg['google_books_key'] ?? '') : '';
-    }
+// Descripción de rescate con Google Books
+// (la portada ya NO se toma de aquí: se busca más abajo con comprobación de título y autor)
+if (!$saltarRescates && $sinDesc($descripcion)) {
 
     $tituloLimpio = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
     $tituloLimpio = trim(explode('/', $tituloLimpio)[0]);
     $tituloLimpio = trim(explode(' - ', $tituloLimpio)[0]);
     $autorLimpio = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
 
+    // Cada intento: [consulta, restringir a español]
     $intentos = [];
     if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo)) {
-        $intentos[] = ['isbn:' . $id_externo, false];  
+        $intentos[] = ['isbn:' . $id_externo, false];   // ISBN exacto, en cualquier idioma
     }
     if ($autorLimpio !== '') {
         $intentos[] = ['intitle:"' . $tituloLimpio . '" inauthor:"' . $autorLimpio . '"', false];
@@ -217,7 +218,7 @@ if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin desc
 
     $descEncontrada = false;
     foreach ($intentos as $n => [$query, $soloEs]) {
-        if ($descEncontrada && strpos($portada, 'placehold.co') === false) break;
+        if ($descEncontrada) break;
 
         $urlAPI = "https://www.googleapis.com/books/v1/volumes?q=" . urlencode($query)
                 . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '')
@@ -225,7 +226,7 @@ if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin desc
                 . "&maxResults=5";
 
         $json = false; $codigoHttp = 0;
-        for ($reintento = 0; $reintento < 2; $reintento++) {  
+        for ($reintento = 0; $reintento < 2; $reintento++) {   // reintentar una vez si Google da 5xx
             $ch = curl_init();
             curl_setopt_array($ch, [
                 CURLOPT_URL => $urlAPI,
@@ -257,10 +258,6 @@ if (!$saltarRescates && (empty(trim($descripcion)) || $descripcion === "Sin desc
                     $descEncontrada = true;
                 }
             }
-            if (strpos($portada, 'placehold.co') !== false && !empty($vi["imageLinks"])) {
-                $img = $vi["imageLinks"]["thumbnail"] ?? $vi["imageLinks"]["smallThumbnail"] ?? "";
-                if ($img) $portada = str_replace("http://", "https://", $img);
-            }
         }
         $descLog['google'][] = "intento $n: HTTP $codigoHttp, " . count($items) . " resultados, $conDesc con descripción";
     }
@@ -282,7 +279,7 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Apple Books (API de iTunes, sin clave)
+// Apple Books (API de iTunes, sin clave): suele tener descripciones de ediciones en español
 if (!$saltarRescates && $sinDesc($descripcion)) {
     $tAB = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
     $autorAB = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
@@ -321,7 +318,7 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Otra edición del mismo libro buscando por autor
+// Otra edición del mismo libro (p. ej. el original en inglés), buscando por autor
 if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido") {
     $norm = function (string $t): string {
         $t = strtr(mb_strtolower($t, 'UTF-8'), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
@@ -337,7 +334,6 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
         return count($t) >= 2 ? $t[0] . ' ' . end($t) : implode(' ', $t);
     };
     $autorNorm = $clave(trim(explode(',', $autor)[0]));
-    $apiKey = $apiKey ?? '';
 
     // Páginas de referencia (para descartar libros distintos del mismo autor)
     $pagsRef = (int)$paginasTotalesAPI;
@@ -351,12 +347,12 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
           . ($apiKey !== '' ? "&key=" . urlencode($apiKey) : '') . "&printType=books&maxResults=20";
     $resA = lbJson($urlA);
 
-    $candidatos = [];   // título base [descripción, título original]
-    $cercanos   = [];   
+    $candidatos = [];   // título base => [descripción, título original]
+    $cercanos   = [];   // los mismos, pero solo con páginas parecidas
     foreach ($resA['items'] ?? [] as $itA) {
         $vi = $itA['volumeInfo'] ?? [];
         if (empty($vi['description'])) continue;
-        // el autor debe coincidir exactamente
+        // el autor debe coincidir exactamente (evita "Ana Garriga Domínguez" frente a "Ana Garriga")
         if (!in_array($autorNorm, array_map($clave, $vi['authors'] ?? []), true)) continue;
         $pc = (int)($vi['pageCount'] ?? 0);
         $kB = $base((string)($vi['title'] ?? ''));
@@ -365,7 +361,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             $cercanos[$kB] ??= [$vi['description'], $vi['title'] ?? ''];
         }
     }
-    // Si el autor solo tiene un libro, se usa sin más; si tiene varios, se desempata por página
+    // Si el autor solo tiene un libro, se usa sin más; si tiene varios, se desempata por páginas (±30 %)
     if (count($candidatos) !== 1 && count($cercanos) === 1) $candidatos = $cercanos;
 
     $descLog['otra_edicion'] = 'Google: ' . count($resA['items'] ?? []) . ' resultados, ' . count($candidatos) . ' candidatos';
@@ -380,7 +376,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             'author' => $autorNorm, 'limit' => 20,
             'fields' => 'key,title,author_name,number_of_pages_median',
         ]));
-        $obras = [];   
+        $obras = [];   // título base => clave de la obra
         $obrasCerca = [];
         foreach ($resO['docs'] ?? [] as $dO) {
             if (!in_array($autorNorm, array_map($clave, $dO['author_name'] ?? []), true)) continue;
@@ -419,6 +415,25 @@ if ($sinDesc($descripcion)) {
     $_SESSION[$claveFallo] = time();   // recordar el fallo para no repetir las búsquedas
 }
 
+// Portada de rescate: solo si no hay ninguna, y solo se acepta si el libro encontrado es el mismo (título y autor coinciden)
+if (strpos($portada, 'placehold.co') !== false) {
+    $claveCov = 'cov_fail_' . md5($id_externo . '|' . $titulo);
+    $covFalloReciente = !isset($_GET['debug']) && isset($_SESSION[$claveCov]) && (time() - $_SESSION[$claveCov]) < 6 * 3600;
+
+    if (!$covFalloReciente) {
+        $cov = PortadasVerificadas::buscar(
+            $titulo,
+            ($autor !== "Autor desconocido") ? $autor : '',
+            PortadasVerificadas::esIsbn((string)$id_externo) ? (string)$id_externo : ''
+        );
+        if ($cov) {
+            $portada = $cov['url'];
+        } else {
+            $_SESSION[$claveCov] = time();   // no repetir la búsqueda en cada visita
+        }
+    }
+}
+
 // Si la descripción se obtuvo por un rescate, guardarla en la lista del usuario
 if ($authUser && $descLog['desc_api_caracteres'] === 0 && !$sinDesc($descripcion)) {
     try {
@@ -454,11 +469,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// Datos del usuario sobre este libro 
+// Datos del usuario sobre este libro (una sola consulta)
 $estadoActual = null;
 $libroUser = null;
-$miReseña = '';
 $puntuacionUsuario = null;
+$miReseña = '';
 if ($authUser) {
     $stmt = $db->pdo->prepare("SELECT * FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1");
     $stmt->execute([$authUser["id"], $id_externo, $titulo]);
@@ -467,7 +482,6 @@ if ($authUser) {
 
     $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
     $miReseña = $reviewService->obtenerReseñaUsuario($authUser["id"], $id_externo);
-
 }
 
 $paginasTotales = $libroUser ? (int)$libroUser["paginas_totales"] : 0;
@@ -481,7 +495,7 @@ $paginasMostrar = $paginasTotales > 0 ? $paginasTotales : $paginasTotalesAPI;
 $reseñas = $reviewService->obtenerReseñas($id_externo);
 $medias  = $ratingService->obtenerMedias($id_externo);
 
-// URL de portada segura para usarla dentro de CSS url
+// URL de portada segura para usarla dentro de CSS url('...')
 $portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
 
 $estados = [
@@ -506,13 +520,12 @@ $metricas = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($titulo) ?></title>
-    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
-    <script src="main.js"></script>
-  
+    <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= @filemtime(__DIR__ . '/css/styles.css') ?>">
+    <script src="/Reads/public/main.js"></script>
 </head>
 
-<body class="page-libro">>
+<body class="page-libro">
 <div class="lb-wrap">
 
     <!-- Cabecera -->
@@ -672,40 +685,16 @@ $metricas = [
     </div>
 </div>
 
+<!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-
-        <a href="index.php" class="nav-card-float">
-            <span class="nav-icon">🏠</span>
-            <span>Inicio</span>
-        </a>
-
-        <a href="perfil.php" class="nav-card-float">
-            <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
-        </a>
-        <a href="biblioteca.php" class="nav-card-float">
-            <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
-        </a>
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
-        </a>
-        
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
-
-          <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
-        </a>
+        <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
+        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
+        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
+        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
+        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
+        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
     </nav>
 </div>
 

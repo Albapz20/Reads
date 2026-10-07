@@ -1,9 +1,8 @@
-/* Base estructural de todos los temas*/
-
+/* Base común para todos los temas */
 :root {
     color-scheme: light;
 
-    /*  Valores por defecto (cada tema los sobrescribe)  */
+    /*  Valores por defecto  */
     --bg-main: #f7f7f7;
     --bg-card: #ffffff;
     --bg-chip: #f1f1f1;
@@ -30,7 +29,7 @@
     --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
     --font-heading: var(--font-body);
 
-    /* Biblioteca */
+    /* Biblioteca / estantería */
     --bg-biblioteca: var(--bg-main);
     --texto-biblioteca: var(--text-color);
     --madera-balda: linear-gradient(to bottom, #8c5638, #6f3f26 40%, #4a2817);
@@ -38,7 +37,7 @@
     --selector-bg: var(--bg-card);
     --selector-borde: var(--border-color);
 
-    /*  Alias para el CSS */
+    /*  Alias para el CSS y las páginas antiguas   */
     --card-bg: var(--bg-card);
     --chip-bg: var(--bg-chip);
     --text-main: var(--text-color);
@@ -123,12 +122,10 @@ a { color: var(--link-color); font-weight: 700; }
 
 .star.full, .star.half { color: var(--star-color); }
 
-/* Compatibilidad con componentes de las páginas */
-
 /* Barra de navegación flotante */
 body .quick-nav-floating { background: var(--nav-bg); border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 body .nav-card-float { color: var(--nav-text); }
-body .nav-card-float:hover, body .nav-card-float.active { color: var(--primary-color); }
+body .nav-card-float:hover, body .nav-card-float.active { color: var(--primary-color); background: var(--primary-soft); }
 
 /* Píldoras de libro.php y biblioteca.php */
 body .lb-estados button, body .lb-chip, body .pestana { background: var(--glass); color: var(--text-color); }

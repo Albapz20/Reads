@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/PortadasVerificadas.php';
+
 class PortadasService {
 
     private const DIR_UPLOADS = __DIR__ . '/../public/uploads/portadas/';
@@ -8,7 +10,7 @@ class PortadasService {
 
         // ISBN exacto
         if (!empty($isbn)) {
-            $url = self::buscarPorIsbn(trim($isbn));
+            $url = self::buscarPorIsbn(trim($isbn), $tituloOriginal, $autor);
             if ($url && ($ruta = self::descargarImagenLocal($url, $idUnico))) {
                 return $ruta;
             }
@@ -80,15 +82,27 @@ class PortadasService {
         return array_unique(array_filter($candidatos));
     }
 
-    private static function buscarPorIsbn($isbn) {
-        $isbnLimpio = preg_replace('/[^0-9X]/i', '', $isbn);
+    private static function buscarPorIsbn($isbn, $titulo = '', $autor = '') {
+        $isbnLimpio = strtoupper(preg_replace('/[^0-9X]/i', '', $isbn));
         if (empty($isbnLimpio)) return null;
 
         $res = self::curlGet("https://www.googleapis.com/books/v1/volumes?q=isbn:" . $isbnLimpio);
-        if ($res) {
-            $data = json_decode($res, true);
-            if (!empty($data['items'][0]['volumeInfo']['imageLinks'])) {
-                $links = $data['items'][0]['volumeInfo']['imageLinks'];
+        if (!$res) return null;
+
+        $data = json_decode($res, true);
+        foreach ($data['items'] ?? [] as $item) {
+            $vi = $item['volumeInfo'] ?? [];
+            $links = $vi['imageLinks'] ?? null;
+            if (!$links) continue;
+
+            $m = PortadasVerificadas::coincide((string)$titulo, (string)$autor, (string)($vi['title'] ?? ''), (array)($vi['authors'] ?? []));
+
+            $esEseIsbn = false;
+            foreach ($vi['industryIdentifiers'] ?? [] as $idn) {
+                if (strtoupper((string)($idn['identifier'] ?? '')) === $isbnLimpio) { $esEseIsbn = true; break; }
+            }
+
+            if ($m['ok'] || ($esEseIsbn && $m['autor'] === true)) {
                 $img = $links['extraLarge'] ?? $links['large'] ?? $links['medium'] ?? $links['thumbnail'] ?? null;
                 if ($img) {
                     return preg_replace('/&zoom=\d+/', '&zoom=2', str_replace('http://', 'https://', $img));
@@ -104,11 +118,11 @@ class PortadasService {
             $query .= ' inauthor:"' . self::obtenerApellido($autor) . '"';
         }
 
-        $res = self::curlGet("https://www.googleapis.com/books/v1/volumes?q=" . urlencode($query) . "&maxResults=5");
+        $res = self::curlGet("https://www.googleapis.com/books/v1/volumes?q=" . urlencode($query) . "&maxResults=10");
 
         if (!$res || empty(json_decode($res, true)['items'])) {
             $qGeneral = trim($titulo . ' ' . $autor);
-            $res = self::curlGet("https://www.googleapis.com/books/v1/volumes?q=" . urlencode($qGeneral) . "&maxResults=5");
+            $res = self::curlGet("https://www.googleapis.com/books/v1/volumes?q=" . urlencode($qGeneral) . "&maxResults=10");
         }
 
         if ($res) {
@@ -135,7 +149,7 @@ class PortadasService {
         $q = trim($titulo . ' ' . $autor);
 
         foreach (['es', 'us', 'mx'] as $country) {
-            $res = self::curlGet("https://itunes.apple.com/search?term=" . urlencode($q) . "&entity=ebook&country={$country}&limit=5");
+            $res = self::curlGet("https://itunes.apple.com/search?term=" . urlencode($q) . "&entity=ebook&country={$country}&limit=10");
             if ($res) {
                 $data = json_decode($res, true);
                 foreach ($data['results'] ?? [] as $item) {
@@ -154,7 +168,7 @@ class PortadasService {
 
     private static function buscarOpenLibrary($titulo, $autor) {
         $q = trim($titulo . ' ' . $autor);
-        $res = self::curlGet("https://openlibrary.org/search.json?q=" . urlencode($q) . "&limit=5");
+        $res = self::curlGet("https://openlibrary.org/search.json?q=" . urlencode($q) . "&limit=10");
         if ($res) {
             $data = json_decode($res, true);
             foreach ($data['docs'] ?? [] as $doc) {
@@ -170,36 +184,10 @@ class PortadasService {
     }
 
     private static function esCoincidenciaValida($tituloBuscado, $autorBuscado, $tituloDevuelto, $autoresDevueltos) {
-        $b = self::normalizarTexto($tituloBuscado);
-        $e = self::normalizarTexto($tituloDevuelto);
-
-        if (empty($b) || empty($e)) return false;
-
-        if (!empty($autorBuscado) && strtolower(trim($autorBuscado)) !== 'unknown') {
-            $apellidoBuscado = self::normalizarTexto(self::obtenerApellido($autorBuscado));
-            $coincideAutor = false;
-
-            foreach ($autoresDevueltos as $a) {
-                if (mb_strpos(self::normalizarTexto($a), $apellidoBuscado) !== false) {
-                    $coincideAutor = true;
-                    break;
-                }
-            }
-            if (!$coincideAutor) return false;
-        }
-
-        similar_text($b, $e, $percent);
-        return $percent >= 65 || mb_strpos($e, $b) !== false || mb_strpos($b, $e) !== false;
-    }
-
-    private static function normalizarTexto($str) {
-        $str = mb_strtolower($str, 'UTF-8');
-        $str = strtr($str, [
-            'á'=>'a', 'é'=>'e', 'í'=>'i', 'ó'=>'o', 'ú'=>'u', 'ü'=>'u', 'ñ'=>'n',
-            'à'=>'a', 'è'=>'e', 'ì'=>'i', 'ò'=>'o', 'ù'=>'u', 'ä'=>'a', 'ö'=>'o'
-        ]);
-        $str = preg_replace('/[^a-z0-9\s]/u', ' ', $str);
-        return trim(preg_replace('/\s+/', ' ', $str));
+        return PortadasVerificadas::coincide(
+            (string)$tituloBuscado, (string)$autorBuscado,
+            (string)$tituloDevuelto, (array)$autoresDevueltos
+        )['ok'];
     }
 
     private static function obtenerApellido($autor) {
@@ -214,7 +202,7 @@ class PortadasService {
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_FAILONERROR    => true,  
+            CURLOPT_FAILONERROR    => true,
             CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4,
             CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_TIMEOUT        => 8,

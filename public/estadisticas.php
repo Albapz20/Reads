@@ -9,6 +9,14 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 $usuario = Auth::usuario();
 if (!$usuario) { header("Location: login.php"); exit; }
 
+/*  Notas agrupadas por estrella entera  */
+if (!function_exists('grupoNota')) {
+    // Agrupa cualquier nota en su estrella entera: 4, 4.1, 4.35 y 4.99 -> 4 (el 5 es solo 5; menos de 1 cuenta como 1)
+    function grupoNota(float $v): int { return max(1, min(5, (int)floor($v + 0.00001))); }
+    // Nota exacta para mostrar: 4.35 -> "4,35", 4.5 -> "4,5", 4 -> "4"
+    function formatoNota(float $v): string { return str_replace('.', ',', rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.')); }
+}
+
 $db = new Database();
 $ajustesService = new AjustesService();
 $userService    = new UserService();
@@ -327,10 +335,17 @@ try {
     $stmtSync->execute([$usuario["id"]]);
 } catch (Exception $e) {}
 
+// Una sola nota por libro (misma consulta que estadisticas_estrellas.php, sin duplicados)
 try {
-    $stmt = $db->pdo->prepare("SELECT COALESCE(NULLIF(p.estrellas, 0), NULLIF(l.estrellas, 0), 0) AS estrellas, YEAR(l.fecha_fin) AS anio
+    $stmt = $db->pdo->prepare("SELECT COALESCE(
+                           (SELECT p.estrellas FROM puntuaciones p
+                             WHERE p.usuario_id = l.usuario_id
+                               AND (p.libro_id = l.libro_id OR p.libro_id = l.id)
+                               AND p.estrellas > 0
+                             ORDER BY (p.libro_id = l.libro_id) DESC LIMIT 1),
+                           NULLIF(l.estrellas, 0), 0) AS estrellas,
+                       YEAR(l.fecha_fin) AS anio
                      FROM listas_lectura l
-                     LEFT JOIN puntuaciones p ON p.usuario_id = l.usuario_id AND (p.libro_id = l.libro_id OR p.libro_id = l.id)
                      WHERE l.usuario_id = ? AND l.estado = 'leido'");
     $stmt->execute([$usuario["id"]]);
     $filasNotas = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -340,19 +355,25 @@ try {
     $filasNotas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Resume una lista de notas: promedio, nota más común y distribución
+// Resume una lista de notas: promedio, nota más común y distribución (5, 4, 3, 2, 1)
 function resumenEstrellas(array $valores): array {
-    $dist = ["5 ★" => 0, "4 ★" => 0, "3 ★" => 0, "2 ★" => 0, "1 ★" => 0];
+    $dist = [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0];
     if (empty($valores)) return ['promedio' => 0, 'comun' => 0, 'dist' => $dist, 'total' => 0];
 
-    $enteras = array_map(fn($v) => (int)round($v), $valores);
-    $frecuencias = array_count_values($enteras);
-    foreach ($enteras as $v) {
-        if ($v >= 1 && $v <= 5) $dist["{$v} ★"]++;
+    foreach ($valores as $v) {
+        $dist[grupoNota((float)$v)]++;
     }
+
+    // Nota más común (si hay empate, la más alta)
+    $maxCant = max($dist);
+    $comun = 0;
+    foreach ($dist as $n => $cant) {
+        if ($cant === $maxCant && $n > $comun) $comun = $n;
+    }
+
     return [
         'promedio' => round(array_sum($valores) / count($valores), 2),
-        'comun'    => array_keys($frecuencias, max($frecuencias))[0],
+        'comun'    => $comun,
         'dist'     => $dist,
         'total'    => count($valores),
     ];
@@ -392,10 +413,9 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="main.js"></script>
 <title>Estadísticas de lectura</title>
-<link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
-<link rel="stylesheet" href="/Reads/public/css/styles.css?v=3">
+<link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
+<link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 </head>
 <body class="page-estadisticas">
 
@@ -524,10 +544,10 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
                     </div>
                     <div class="estrellas-filas">
                         <?php for ($n = 5; $n >= 1; $n--):
-                            $cantidad = (int)$distribucionEstrellas["{$n} ★"];
+                            $cantidad = (int)$distribucionEstrellas[$n];
                             $pctFila = round(($cantidad / $totalDistribucion) * 100);
                         ?>
-                            <a class="estrella-fila <?= $cantidad === 0 ? 'vacia' : '' ?>" href="estadisticas_estrellas.php?valor=<?= $n ?>" title="Ver libros de <?= $n ?> estrellas">
+                            <a class="estrella-fila <?= $cantidad === 0 ? 'vacia' : '' ?>" href="estadisticas_estrellas.php?valor=<?= $n ?>&notas=<?= htmlspecialchars($periodoNotas) ?>" title="Ver libros de <?= $n ?> estrellas">
                                 <span class="num"><?= $n ?>★</span>
                                 <span class="barra"><span class="relleno" style="display:block; width: <?= $pctFila ?>%;"></span></span>
                                 <span class="cuenta"><?= $cantidad ?> · <?= $pctFila ?>%</span>
@@ -535,7 +555,7 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
                         <?php endfor; ?>
                     </div>
                 </div>
-                <p class="estrellas-pie">Nota más común: <strong><?= $estrellaComun ? $estrellaComun . ' ★' : '—' ?></strong> · Pulsa una fila para ver esos libros.</p>
+                <p class="estrellas-pie">Nota más común: <strong><?= $estrellaComun ? $estrellaComun . ' ★' : '—' ?></strong> · Pulsa una fila para ver esos libros (incluye los decimales, p. ej. 4,5 va en 4★).</p>
             <?php endif; ?>
         </section>
 
@@ -629,18 +649,18 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
         <a href="estadisticas.php" class="nav-card-float active">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        
+        </a>
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
+            <span>Calendario</span>
         </a>
-        
+
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
 
-          <a href="ajustes.php" class="nav-card-float">
+        <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
