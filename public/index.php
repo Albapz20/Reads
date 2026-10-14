@@ -122,8 +122,95 @@ if (!empty($historial) && is_array($historial)) {
     $busquedasUnicas = array_slice($busquedasUnicas, 0, 6);
 }
 
-function e($texto) {
-    return htmlspecialchars($texto ?? '', ENT_QUOTES, 'UTF-8');
+/* Wrap Up */
+$mesesNombre = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio',
+                7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
+$mesesInicial = ['E', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+
+// Años en los que hay libros terminados
+$stmtAnios = $db->pdo->prepare("SELECT DISTINCT YEAR(fecha_fin) AS anio
+                                FROM listas_lectura
+                                WHERE usuario_id = ? AND estado = 'leido' AND fecha_fin IS NOT NULL
+                                ORDER BY anio DESC");
+$stmtAnios->execute([$usuario["id"]]);
+$aniosWrap = [];
+foreach ($stmtAnios->fetchAll(PDO::FETCH_ASSOC) as $fila) {
+    if ((int)$fila['anio'] > 0) $aniosWrap[] = (int)$fila['anio'];
+}
+
+$anioWrap = (int)($_GET['wrap'] ?? 0);
+if (!in_array($anioWrap, $aniosWrap, true)) {
+    $anioWrap = $aniosWrap[0] ?? (int)$year;
+}
+
+// Libros terminados en el año elegido
+$stmtWrap = $db->pdo->prepare("SELECT id, libro_id, titulo, autores, portada,
+                                      CASE WHEN paginas_leidas > 0 THEN paginas_leidas ELSE paginas_totales END AS paginas,
+                                      fecha_fin
+                               FROM listas_lectura
+                               WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?
+                               ORDER BY fecha_fin DESC, id DESC");
+$stmtWrap->execute([$usuario["id"], $anioWrap]);
+$wuLibros = $stmtWrap->fetchAll(PDO::FETCH_ASSOC);
+
+$wuTotalLibros = count($wuLibros);
+$wuPaginas = 0;
+$wuMeses = array_fill(1, 12, 0);
+$wuAutores = [];
+$wuLargo = null;
+$wuCorto = null;
+
+foreach ($wuLibros as $libroWrap) {
+    $p = (int)($libroWrap['paginas'] ?? 0);
+    $libroWrap['paginas'] = $p;
+    $wuPaginas += $p;
+
+    $mes = (int)date('n', strtotime($libroWrap['fecha_fin']));
+    if ($mes >= 1 && $mes <= 12) $wuMeses[$mes]++;
+
+    $autor = trim(explode(',', $libroWrap['autores'] ?? '')[0]);
+    if ($autor !== '') $wuAutores[$autor] = ($wuAutores[$autor] ?? 0) + 1;
+
+    if ($p > 0) {
+        if ($wuLargo === null || $p > $wuLargo['paginas']) $wuLargo = $libroWrap;
+        if ($wuCorto === null || $p < $wuCorto['paginas']) $wuCorto = $libroWrap;
+    }
+}
+
+arsort($wuAutores);
+$wuAutorTop = $wuAutores ? array_key_first($wuAutores) : null;
+$wuAutorTopNum = $wuAutorTop !== null ? $wuAutores[$wuAutorTop] : 0;
+
+$wuMesTopNum = max($wuMeses);
+$wuMesTop = ($wuMesTopNum > 0) ? array_search($wuMesTopNum, $wuMeses) : null;
+
+$wuDias = ($anioWrap === (int)$year) ? $diaDelAno : ((date('L', mktime(0, 0, 0, 1, 1, $anioWrap)) == 1) ? 366 : 365);
+$wuPagDia = round($wuPaginas / $wuDias, 1);
+$wuHoras = round($wuPaginas / 60, 1);
+$wuMedia = ($wuTotalLibros > 0) ? round($wuPaginas / $wuTotalLibros) : 0;
+
+// Portada del libro más largo y collage con los últimos libros
+$wuLargoPortada = $wuLargo ? obtenerPortadaValida($wuLargo['portada'] ?? '', (int)$wuLargo['id']) : '';
+$wuCollage = [];
+foreach (array_slice($wuLibros, 0, 8) as $libroWrap) {
+    $wuCollage[] = [
+        'titulo'  => $libroWrap['titulo'],
+        'portada' => obtenerPortadaValida($libroWrap['portada'] ?? '', (int)$libroWrap['id']),
+    ];
+}
+
+// Texto para compartir
+$wuTextoCompartir = "📚 Mi Wrap Up {$anioWrap}: {$wuTotalLibros} libros, "
+    . number_format($wuPaginas, 0, ',', '.') . " páginas (~{$wuHoras} h de lectura)."
+    . ($wuAutorTop ? " Autor más leído: {$wuAutorTop}." : '')
+    . ($wuLargo ? " Libro más largo: {$wuLargo['titulo']} ({$wuLargo['paginas']} págs)." : '')
+    . ($wuMesTop ? " Mes estrella: {$mesesNombre[$wuMesTop]}." : '')
+    . " #Reads";
+
+if (!function_exists('e')) {
+    function e($texto) {
+        return htmlspecialchars($texto ?? '', ENT_QUOTES, 'UTF-8');
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -266,6 +353,132 @@ function e($texto) {
         <?php endif; ?>
     </div>
 
+    <!-- Wrap Up -->
+    <div class="panel wu-panel" id="wrapup" style="margin-top: 25px;">
+        <div class="wu-head">
+            <h2>🎁 Tu Wrap Up <?= $anioWrap ?></h2>
+
+            <?php if (count($aniosWrap) > 1): ?>
+                <div class="wu-anios">
+                    <?php foreach ($aniosWrap as $a): ?>
+                        <a href="?wrap=<?= $a ?>#wrapup" class="wu-anio <?= $a === $anioWrap ? 'activo' : '' ?>"><?= $a ?></a>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($wuTotalLibros === 0): ?>
+            <div class="wu-vacio">
+                <div class="wu-vacio-icono">📭</div>
+                <p>Todavía no has terminado ningún libro en <?= $anioWrap ?>.<br>Márcalos como <strong>leídos</strong> con su fecha de fin y aquí aparecerá tu resumen del año.</p>
+                <a href="biblioteca.php" class="btn-Reads-continue">Ir a mi estantería</a>
+            </div>
+        <?php else: ?>
+            <div class="wu-visor" data-total="6">
+                <div class="wu-track">
+
+                    <!-- Libros -->
+                    <section class="wu-slide wu-s1">
+                        <span class="wu-kicker">Tu <?= $anioWrap ?> en libros</span>
+                        <span class="wu-big"><?= $wuTotalLibros ?></span>
+                        <span class="wu-text"><?= $wuTotalLibros === 1 ? 'libro terminado' : 'libros terminados' ?></span>
+                        <?php if ($anioWrap === (int)$year): ?>
+                            <span class="wu-chip">🎯 Reto: <?= $librosLeidos ?> de <?= $objetivoAnual ?> (<?= $porcentajeReto ?>%)</span>
+                        <?php else: ?>
+                            <span class="wu-chip">Un año de historias</span>
+                        <?php endif; ?>
+                    </section>
+
+                    <!-- Páginas -->
+                    <section class="wu-slide wu-s2">
+                        <span class="wu-kicker">Páginas devoradas</span>
+                        <span class="wu-big"><?= number_format($wuPaginas, 0, ',', '.') ?></span>
+                        <span class="wu-text">≈ <?= str_replace('.', ',', (string)$wuHoras) ?> horas de lectura</span>
+                        <div class="wu-chips">
+                            <span class="wu-chip">⚡ <?= str_replace('.', ',', (string)$wuPagDia) ?> págs/día</span>
+                            <span class="wu-chip">📘 <?= number_format($wuMedia, 0, ',', '.') ?> págs/libro</span>
+                        </div>
+                    </section>
+
+                    <!-- Autor más leído -->
+                    <section class="wu-slide wu-s3">
+                        <span class="wu-kicker">Tu autor del año</span>
+                        <?php if ($wuAutorTop): ?>
+                            <span class="wu-medio"><?= e($wuAutorTop) ?></span>
+                            <span class="wu-text">
+                                <?php if ($wuAutorTopNum > 1): ?>
+                                    <?= $wuAutorTopNum ?> libros suyos este año
+                                <?php else: ?>
+                                    Aún no repites autor: ¡variedad total!
+                                <?php endif; ?>
+                            </span>
+                        <?php else: ?>
+                            <span class="wu-text">Sin datos de autores todavía</span>
+                        <?php endif; ?>
+                    </section>
+
+                    <!-- Libro más largo -->
+                    <section class="wu-slide wu-s4">
+                        <span class="wu-kicker">El peso pesado</span>
+                        <?php if ($wuLargo): ?>
+                            <?php if (!empty($wuLargoPortada)): ?>
+                                <img class="wu-portada" src="<?= e($wuLargoPortada) ?>" alt="<?= e($wuLargo['titulo']) ?>"
+                                     onerror="this.style.display='none'">
+                            <?php endif; ?>
+                            <span class="wu-medio"><?= e($wuLargo['titulo']) ?></span>
+                            <span class="wu-text"><?= number_format($wuLargo['paginas'], 0, ',', '.') ?> páginas</span>
+                            <?php if ($wuCorto && $wuCorto['id'] !== $wuLargo['id']): ?>
+                                <span class="wu-chip">⚡ El más cortito: <?= e($wuCorto['titulo']) ?> (<?= (int)$wuCorto['paginas'] ?> págs)</span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <span class="wu-text">Añade el número de páginas a tus libros para ver este dato</span>
+                        <?php endif; ?>
+                    </section>
+
+                    <!-- Mes estrella -->
+                    <section class="wu-slide wu-s5">
+                        <span class="wu-kicker">Tu mes estrella</span>
+                        <?php if ($wuMesTop): ?>
+                            <span class="wu-medio"><?= ucfirst($mesesNombre[$wuMesTop]) ?></span>
+                            <span class="wu-text"><?= $wuMesTopNum ?> <?= $wuMesTopNum === 1 ? 'libro terminado' : 'libros terminados' ?></span>
+                        <?php endif; ?>
+                        <div class="wu-meses">
+                            <?php foreach ($wuMeses as $numMes => $cuantos): ?>
+                                <div class="wu-mes <?= $numMes === $wuMesTop ? 'top' : '' ?>" title="<?= ucfirst($mesesNombre[$numMes]) ?>: <?= $cuantos ?>">
+                                    <i style="height: <?= $wuMesTopNum > 0 ? max(4, round(($cuantos / $wuMesTopNum) * 100)) : 4 ?>%;"></i>
+                                    <span><?= $mesesInicial[$numMes - 1] ?></span>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+
+                    <!-- Resumen -->
+                    <section class="wu-slide wu-s6">
+                        <span class="wu-kicker">Tu año de un vistazo</span>
+                        <div class="wu-collage">
+                            <?php foreach ($wuCollage as $c): ?>
+                                <div class="wu-mini" title="<?= e($c['titulo']) ?>">
+                                    <?php if (!empty($c['portada'])): ?>
+                                        <img src="<?= e($c['portada']) ?>" alt="<?= e($c['titulo']) ?>" onerror="this.remove()">
+                                    <?php else: ?>
+                                        <span>📖</span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <span class="wu-text"><?= $wuTotalLibros ?> libros · <?= number_format($wuPaginas, 0, ',', '.') ?> páginas</span>
+                        <button type="button" class="wu-copiar" id="wu-copiar" data-texto="<?= e($wuTextoCompartir) ?>">📋 Copiar mi resumen</button>
+                    </section>
+
+                </div>
+
+                <button type="button" class="wu-flecha wu-prev" aria-label="Anterior" hidden>‹</button>
+                <button type="button" class="wu-flecha wu-next" aria-label="Siguiente">›</button>
+                <div class="wu-dots" role="tablist"></div>
+            </div>
+        <?php endif; ?>
+    </div>
+
 <!-- Recomendados para ti -->
 <div class="panel" style="margin-top: 25px;">
     <div class="panel-header">
@@ -378,31 +591,34 @@ function e($texto) {
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>
+
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
         </a>
+
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        
+        </a>
+
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
+            <span>Calendario</span>
         </a>
-        
+
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
 
-          <a href="ajustes.php" class="nav-card-float">
+        <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
     </nav>
 </div>
-        
+
 
 <script>
 const input = document.querySelector('input[name="q"]');
@@ -420,13 +636,7 @@ function generarPortadaSVG(titulo) {
     return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='160' viewBox='0 0 120 160'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%231e293b;stop-opacity:1'/><stop offset='100%' style='stop-color:%230f172a;stop-opacity:1'/></linearGradient></defs><rect width='100%' height='100%' fill='url(%23g)' rx='4'/><rect x='3' y='0' width='3' height='100%' fill='%23ffffff' opacity='0.25'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='bold' fill='%23ffffff'>${t}</text><text x='50%' y='75%' dominant-baseline='middle' text-anchor='middle' font-size='14' fill='%23ffffff'>📖</text></svg>`;
 }
 
-// Fallback de portada, al fallar la imagen se sustituye por la generada
-function fallbackPortada(img) {
-    img.onerror = null;
-    img.src = generarPortadaSVG(img.alt);
-}
-
-//Búsqueda con sugerencias en tiempo real
+// Búsqueda con sugerencias en tiempo real
 if (input && sugerencias) {
     input.addEventListener('input', async () => {
         const texto = input.value.trim();
@@ -472,53 +682,6 @@ if (input && sugerencias) {
     });
 }
 
-// Cargar novedades recientes
-async function cargarNovedadesRecientes(contenedorId) {
-    const contenedor = document.getElementById(contenedorId);
-    if (!contenedor) return;
-
-    const tituloPanel = contenedor.closest('.panel')?.querySelector('h2');
-
-    try {
-        const res = await fetch('api_novedades.php');
-        if (!res.ok) throw new Error("HTTP Error " + res.status);
-
-        const data = await res.json();
-
-        if (tituloPanel && data.tituloSeccion) {
-            tituloPanel.textContent = `🔥 ${data.tituloSeccion}`;
-        }
-
-        if (!data.libros || data.libros.length === 0) {
-            contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No hay novedades disponibles en este momento.</p>";
-            return;
-        }
-
-        contenedor.innerHTML = "";
-
-        data.libros.forEach(item => {
-            const titulo = item.titulo || 'Sin título';
-            const autor = item.autor || 'Autor desconocido';
-            const portadaFinal = item.portada ? item.portada : generarPortadaSVG(titulo);
-
-            const html = `
-                <a href="libro.php?id=${encodeURIComponent(item.id)}" class="book-card-scroll" title="${escapeHtml(titulo)}">
-                    <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
-                        <img src="${escapeHtml(portadaFinal)}" alt="${escapeHtml(titulo)}" style="width:100%; height:100%; object-fit:cover;" onerror="fallbackPortada(this)">
-                    </div>
-                    <span class="title" style="display:block; margin-top:8px;">${escapeHtml(titulo)}</span>
-                    <span class="subtitle" style="display:block; color:#888;">${escapeHtml(autor)}</span>
-                </a>
-            `;
-            contenedor.insertAdjacentHTML('beforeend', html);
-        });
-
-    } catch (error) {
-        console.error("Error al cargar novedades:", error);
-        contenedor.innerHTML = "<p style='color:#888; font-size: 0.85rem; padding: 10px;'>No se pudieron cargar las novedades en tiempo real.</p>";
-    }
-}
-
 // Cargar recomendaciones basadas en lecturas recientes
 async function cargarRecomendaciones() {
     const contenedorRec = document.getElementById('carrusel-recomendados');
@@ -534,16 +697,16 @@ async function cargarRecomendaciones() {
         const libros = data.libros || [];
 
         // Subtítulo según los últimos libros leídos
-       if (subtituloRec) {
-    if (base.length === 0) {
-        subtituloRec.textContent = 'Marca libros como leídos para recibir recomendaciones';
-    } else {
-        const nombres = base.slice(0, 2).map(t => `<strong>${escapeHtml(t)}</strong>`);
-        const resto = base.length - 2;
-        subtituloRec.innerHTML = 'Porque leíste ' + nombres.join(' y ') +
-            (resto > 0 ? ` y ${resto} más` : '');
-    }
-}
+        if (subtituloRec) {
+            if (base.length === 0) {
+                subtituloRec.textContent = 'Marca libros como leídos para recibir recomendaciones';
+            } else {
+                const nombres = base.slice(0, 2).map(t => `<strong>${escapeHtml(t)}</strong>`);
+                const resto = base.length - 2;
+                subtituloRec.innerHTML = 'Porque leíste ' + nombres.join(' y ') +
+                    (resto > 0 ? ` y ${resto} más` : '');
+            }
+        }
 
         if (libros.length === 0) {
             contenedorRec.innerHTML = "<p style='color:#888; font-size: 0.85rem;'>No hay sugerencias disponibles en este momento.</p>";
@@ -575,10 +738,75 @@ async function cargarRecomendaciones() {
     }
 }
 
+// Wrap Up
+function iniciarWrapUp() {
+    const visor = document.querySelector('.wu-visor');
+    if (!visor) return;
+
+    const track  = visor.querySelector('.wu-track');
+    const slides = Array.from(track.children);
+    const prev   = visor.querySelector('.wu-prev');
+    const next   = visor.querySelector('.wu-next');
+    const dotsBox = visor.querySelector('.wu-dots');
+    let actual = 0;
+
+    const dots = slides.map((_, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Ir a la diapositiva ' + (i + 1));
+        b.addEventListener('click', () => ir(i));
+        dotsBox.appendChild(b);
+        return b;
+    });
+
+    function marcar(i) {
+        actual = i;
+        dots.forEach((d, n) => d.classList.toggle('activo', n === i));
+        prev.hidden = (i === 0);
+        next.hidden = (i === slides.length - 1);
+    }
+
+    function ir(i) {
+        i = Math.max(0, Math.min(slides.length - 1, i));
+        track.scrollTo({ left: i * track.clientWidth, behavior: 'smooth' });
+        marcar(i);
+    }
+
+    track.addEventListener('scroll', () => {
+        const i = Math.round(track.scrollLeft / track.clientWidth);
+        if (i !== actual) marcar(i);
+    }, { passive: true });
+
+    prev.addEventListener('click', () => ir(actual - 1));
+    next.addEventListener('click', () => ir(actual + 1));
+
+    visor.tabIndex = 0;
+    visor.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight') ir(actual + 1);
+        if (e.key === 'ArrowLeft')  ir(actual - 1);
+    });
+
+    marcar(0);
+
+    const copiar = document.getElementById('wu-copiar');
+    if (copiar) {
+        copiar.addEventListener('click', async () => {
+            const original = copiar.textContent;
+            try {
+                await navigator.clipboard.writeText(copiar.dataset.texto);
+                copiar.textContent = '✅ ¡Copiado!';
+            } catch (err) {
+                copiar.textContent = '⚠️ No se pudo copiar';
+            }
+            setTimeout(() => copiar.textContent = original, 1800);
+        });
+    }
+}
+
 // Inicializar funciones al cargar la página
 document.addEventListener('DOMContentLoaded', () => {
-    cargarNovedadesRecientes('carrusel-novedades');
     cargarRecomendaciones();
+    iniciarWrapUp();
 });
 </script>
 </body>

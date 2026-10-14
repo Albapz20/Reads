@@ -3,6 +3,7 @@ require_once "../src/Auth.php";
 require_once "../src/Database.php";
 require_once "../src/AjustesService.php";
 require_once "../src/UserService.php";
+require_once "../src/GenerosHelper.php";
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
@@ -13,8 +14,6 @@ if (!$usuario) { header("Location: login.php"); exit; }
 if (!function_exists('grupoNota')) {
     // Agrupa cualquier nota en su estrella entera: 4, 4.1, 4.35 y 4.99 -> 4 (el 5 es solo 5; menos de 1 cuenta como 1)
     function grupoNota(float $v): int { return max(1, min(5, (int)floor($v + 0.00001))); }
-    // Nota exacta para mostrar: 4.35 -> "4,35", 4.5 -> "4,5", 4 -> "4"
-    function formatoNota(float $v): string { return str_replace('.', ',', rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.')); }
 }
 
 $db = new Database();
@@ -356,6 +355,7 @@ try {
 }
 
 // Resume una lista de notas: promedio, nota más común y distribución (5, 4, 3, 2, 1)
+// Cada nota va a su estrella entera: 4, 4.1, 4.35 o 4.9 cuentan como 4★
 function resumenEstrellas(array $valores): array {
     $dist = [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0];
     if (empty($valores)) return ['promedio' => 0, 'comun' => 0, 'dist' => $dist, 'total' => 0];
@@ -401,9 +401,61 @@ $distribucionEstrellas = $notasMostradas['dist'];
 $totalDistribucion     = array_sum($distribucionEstrellas);
 $porcentajeRelleno     = round(($promedioEstrellas / 5) * 100, 1);
 
-// Enlaces de las pestañas: cada una cambia solo su parámetro y conserva el otro
-function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNotas): string {
-    return 'estadisticas.php?' . http_build_query(array_merge(['periodo' => $periodoTop, 'notas' => $periodoNotas], $cambios));
+/*  Mapa de géneros  */
+$periodoGeneros = $_GET['generos'] ?? 'anio';
+if (!in_array($periodoGeneros, ['anio', 'todos'])) $periodoGeneros = 'anio';
+
+$colGeneros = columnaGeneros($db->pdo);
+$mapaGeneros = [];
+$librosConGenero = 0;
+$librosSinGenero = 0;
+
+if ($colGeneros !== null) {
+    $whereGen  = ($periodoGeneros === 'anio') ? " AND YEAR(fecha_fin) = ?" : "";
+    $paramsGen = [$usuario["id"]];
+    if ($periodoGeneros === 'anio') $paramsGen[] = $year;
+
+    try {
+        $stmt = $db->pdo->prepare("SELECT id, libro_id, titulo, autores, `{$colGeneros}` AS generos_raw
+                                   FROM listas_lectura
+                                   WHERE usuario_id = ? AND estado = 'leido' {$whereGen}");
+        $stmt->execute($paramsGen);
+        $filasGen = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $filasGen = [];
+    }
+
+    // Cuenta libros por género (un libro puede estar en varios)
+    $conteoGeneros = [];
+    $titulosGeneros = [];
+    foreach ($filasGen as $g) {
+        $lista = normalizarGeneros(separarGeneros((string)($g['generos_raw'] ?? '')));
+        if (!$lista) { $librosSinGenero++; continue; }
+        $librosConGenero++;
+        foreach ($lista as $nombre) {
+            $conteoGeneros[$nombre] = ($conteoGeneros[$nombre] ?? 0) + 1;
+            $titulosGeneros[$nombre][] = $g['titulo'];
+        }
+    }
+    arsort($conteoGeneros);
+
+    $i = 0;
+    $restoN = 0;
+    foreach ($conteoGeneros as $nombre => $n) {
+        if ($i < 11) {
+            $mapaGeneros[] = ['nombre' => $nombre, 'n' => $n, 'libros' => array_slice($titulosGeneros[$nombre], 0, 6)];
+        } else {
+            $restoN += $n;
+        }
+        $i++;
+    }
+    if ($restoN > 0) $mapaGeneros[] = ['nombre' => 'Más géneros', 'n' => $restoN, 'libros' => [], 'resto' => true];
+}
+
+// Enlaces de las pestañas: cada una cambia solo su parámetro y conserva los otros
+function urlEstadisticas(array $cambios): string {
+    global $periodoTop, $periodoNotas, $periodoGeneros;
+    return 'estadisticas.php?' . http_build_query(array_merge(['periodo' => $periodoTop, 'notas' => $periodoNotas, 'generos' => $periodoGeneros], $cambios));
 }
 ?>
 <!DOCTYPE html>
@@ -487,8 +539,8 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
             <div class="st-card-head">
                 <h2>🏆 Top 5 libros por páginas</h2>
                 <div class="filtro-pestañas">
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'anio'], $periodoTop, $periodoNotas)) ?>" class="filtro-btn <?= $periodoTop === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'todos'], $periodoTop, $periodoNotas)) ?>" class="filtro-btn <?= $periodoTop === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'anio'])) ?>" class="filtro-btn <?= $periodoTop === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'todos'])) ?>" class="filtro-btn <?= $periodoTop === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
                 </div>
             </div>
 
@@ -528,8 +580,8 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
             <div class="st-card-head">
                 <h2>⭐ Distribución por estrellas</h2>
                 <div class="filtro-pestañas">
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'anio'], $periodoTop, $periodoNotas)) ?>" class="filtro-btn <?= $periodoNotas === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'todos'], $periodoTop, $periodoNotas)) ?>" class="filtro-btn <?= $periodoNotas === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'anio'])) ?>" class="filtro-btn <?= $periodoNotas === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'todos'])) ?>" class="filtro-btn <?= $periodoNotas === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
                 </div>
             </div>
 
@@ -577,6 +629,34 @@ function urlEstadisticas(array $cambios, string $periodoTop, string $periodoNota
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
+        </section>
+
+        <!-- Mapa de géneros -->
+        <section class="st-card ancho">
+            <div class="st-card-head">
+                <h2>🗺️ Mapa de géneros</h2>
+                <div class="filtro-pestañas">
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'anio'])) ?>" class="filtro-btn <?= $periodoGeneros === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'todos'])) ?>" class="filtro-btn <?= $periodoGeneros === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                </div>
+            </div>
+
+            <?php if ($colGeneros === null): ?>
+                <p class="vacio">No se ha podido preparar el almacenamiento de géneros en la base de datos.</p>
+            <?php elseif (empty($mapaGeneros)): ?>
+                <p class="vacio">Todavía no hay géneros para este período. <a href="rellenar_generos.php">🏷️ Completar géneros de mis libros</a></p>
+            <?php else: ?>
+                <div class="mapa-generos" id="mapaGeneros">
+                    <div class="mg-burbujas" role="img" aria-label="Burbujas de géneros literarios: cuanto más grande, más libros"></div>
+                    <ol class="mg-ranking"></ol>
+                </div>
+                <p class="mapa-pie">
+                    <?= (int)$librosConGenero ?> <?= $librosConGenero === 1 ? 'libro' : 'libros' ?> con género
+                    <?php if ($librosSinGenero > 0): ?> · <?= (int)$librosSinGenero ?> sin género · <a href="rellenar_generos.php">Completar</a><?php endif; ?>
+                    · Cuanto más grande la burbuja, más libros de ese género (un libro puede tener varios). Pulsa un género para ver sus libros.
+                </p>
+            <?php endif; ?>
+            <?php if ($colGeneros !== null): ?><p class="mapa-pie" id="estadoGeneros" hidden></p><?php endif; ?>
         </section>
 
         <!-- Datos curiosos -->
@@ -743,6 +823,160 @@ new Chart(ctxMeses, {
         }
     }
 });
+// Mapa de géneros 
+(function () {
+    const caja = document.getElementById("mapaGeneros");
+    if (!caja) return;
+    const burbujas = caja.querySelector(".mg-burbujas");
+    const ranking = caja.querySelector(".mg-ranking");
+    const datos = <?= json_encode($mapaGeneros, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
+    const estilos = {
+        "Fantasía": ["🐉", "#7c4dcc"], "Romance": ["💕", "#e0508a"], "Thriller": ["🔪", "#3d4b6e"],
+        "Misterio y crimen": ["🔍", "#506683"], "Terror": ["👻", "#7a2a3c"], "Ciencia ficción": ["🚀", "#2aa6c9"],
+        "Histórica": ["🏰", "#b8803c"], "Juvenil": ["🎒", "#f0a23a"], "Distopía": ["🏚️", "#6b8294"],
+        "Aventuras": ["🧭", "#3fa56b"], "Humor": ["😄", "#e9b72c"], "Biografías": ["👤", "#8a6a4f"],
+        "Desarrollo personal": ["🌱", "#4fae98"], "Poesía": ["🪶", "#c77dd1"], "Drama": ["🎭", "#d46a4b"],
+        "Cómic y manga": ["💥", "#ef6c6c"], "Paranormal": ["🦇", "#8250a8"], "Erótica": ["🌶️", "#c2185b"],
+        "Contemporánea": ["🏙️", "#4f8fd6"], "Literatura": ["📖", "#9a7b5a"], "Ficción": ["📚", "#8892a6"],
+        "Otros": ["✨", "#9aa0a6"]
+    };
+    const infoDe = d => d.resto ? ["➕", "#9aa0a6"] : (estilos[d.nombre] || ["📚", "#8892a6"]);
+    const textoLibros = n => n + (n === 1 ? " libro" : " libros");
+    const periodoGen = <?= json_encode($periodoGeneros) ?>;
+    const urlGenero = n => "estadisticas_generos.php?genero=" + encodeURIComponent(n) + "&generos=" + periodoGen;
+
+    function empaquetar(items) {
+        const puestos = [];
+        items.forEach(function (it, i) {
+            if (i === 0) { it.x = 0; it.y = 0; puestos.push(it); return; }
+            for (let dist = items[0].r * 0.5; dist < 4000; dist += 4) {
+                const pasos = Math.max(24, Math.round(dist / 5));
+                let ok = false;
+                for (let k = 0; k < pasos; k++) {
+                    const ang = (k / pasos) * Math.PI * 2 + i * 0.9;
+                    const x = Math.cos(ang) * dist, y = Math.sin(ang) * dist * 0.8;
+                    if (puestos.every(c => Math.hypot(c.x - x, c.y - y) >= c.r + it.r + 6)) {
+                        it.x = x; it.y = y; puestos.push(it); ok = true; break;
+                    }
+                }
+                if (ok) break;
+            }
+        });
+    }
+
+    function resaltar(i, on) {
+        burbujas.querySelectorAll('[data-i="' + i + '"]').forEach(e => e.classList.toggle("resalta", on));
+        ranking.querySelectorAll('[data-i="' + i + '"]').forEach(e => e.classList.toggle("resalta", on));
+    }
+
+    // Ranking 
+    function pintarRanking() {
+        ranking.textContent = "";
+        const maxN = Math.max.apply(null, datos.map(d => d.n));
+        datos.forEach(function (d, i) {
+            const inf = infoDe(d);
+            const li = document.createElement("li");
+            const fila = document.createElement(d.resto ? "div" : "a");
+            fila.className = "mg-fila";
+            fila.dataset.i = i;
+            if (!d.resto) fila.href = urlGenero(d.nombre);
+            fila.style.setProperty("--c", inf[1]);
+
+            const emo = document.createElement("span"); emo.className = "emo"; emo.textContent = inf[0];
+            const nom = document.createElement("span"); nom.className = "nom"; nom.textContent = d.nombre;
+            const cnt = document.createElement("span"); cnt.className = "cnt"; cnt.textContent = textoLibros(d.n);
+            const barra = document.createElement("span"); barra.className = "barra";
+            const rel = document.createElement("i"); rel.style.width = Math.max(6, Math.round(d.n / maxN * 100)) + "%";
+            barra.appendChild(rel);
+
+            [emo, nom, cnt, barra].forEach(e => fila.appendChild(e));
+            fila.addEventListener("mouseenter", () => resaltar(i, true));
+            fila.addEventListener("mouseleave", () => resaltar(i, false));
+            li.appendChild(fila);
+            ranking.appendChild(li);
+        });
+    }
+
+    let primera = true;
+    function pintarBurbujas() {
+        burbujas.textContent = "";
+        const W = burbujas.clientWidth, H = burbujas.clientHeight;
+        if (!W || !H) return;
+
+        const maxN = Math.max.apply(null, datos.map(d => d.n));
+        const items = datos.map((d, i) => ({ d: d, i: i, r: 28 + Math.sqrt(d.n / maxN) * 72 }));
+        empaquetar(items);
+
+        const minX = Math.min.apply(null, items.map(c => c.x - c.r)), maxX = Math.max.apply(null, items.map(c => c.x + c.r));
+        const minY = Math.min.apply(null, items.map(c => c.y - c.r)), maxY = Math.max.apply(null, items.map(c => c.y + c.r));
+        const esc = Math.min(W / (maxX - minX), H / (maxY - minY));
+        const ox = W / 2 - ((minX + maxX) / 2) * esc, oy = H / 2 - ((minY + maxY) / 2) * esc;
+
+        items.forEach(function (c) {
+            const d = c.d, inf = infoDe(d), diam = c.r * 2 * esc;
+            const el = document.createElement(d.resto ? "div" : "a");
+            if (!d.resto) el.href = urlGenero(d.nombre);
+            el.className = "mg-burbuja";
+            el.dataset.i = c.i;
+            el.style.setProperty("--c", inf[1]);
+            el.style.setProperty("--i", c.i);
+            el.style.width = el.style.height = diam + "px";
+            el.style.left = (ox + c.x * esc - diam / 2) + "px";
+            el.style.top = (oy + c.y * esc - diam / 2) + "px";
+            if (!primera) el.style.animation = "none";
+            el.title = d.nombre + ": " + textoLibros(d.n) + (d.libros && d.libros.length ? "\n• " + d.libros.join("\n• ") : "");
+
+            const emo = document.createElement("span");
+            emo.className = "b-emo"; emo.textContent = inf[0];
+            emo.style.fontSize = (diam >= 70 ? diam * 0.32 : diam * 0.45) + "px";
+            el.appendChild(emo);
+
+            if (diam >= 100) {
+                const nom = document.createElement("span"); nom.className = "b-nom"; nom.textContent = d.nombre;
+                const num = document.createElement("span"); num.className = "b-num"; num.textContent = textoLibros(d.n);
+                el.appendChild(nom); el.appendChild(num);
+            } else if (diam >= 60) {
+                const num = document.createElement("span"); num.className = "b-num"; num.textContent = d.n;
+                el.appendChild(num);
+            }
+            el.addEventListener("mouseenter", () => resaltar(c.i, true));
+            el.addEventListener("mouseleave", () => resaltar(c.i, false));
+            burbujas.appendChild(el);
+        });
+        primera = false;
+    }
+
+    pintarRanking();
+    pintarBurbujas();
+    let t;
+    window.addEventListener("resize", function () { clearTimeout(t); t = setTimeout(pintarBurbujas, 150); });
+})();
+
+<?php if ($colGeneros !== null && $librosSinGenero > 0): ?>
+// Detección automática de géneros en segundo plano (libros que aún no tienen género)
+(async function () {
+    const estado = document.getElementById("estadoGeneros");
+    let procesados = 0;
+    try {
+        for (let i = 0; i < 40; i++) {
+            const fd = new FormData();
+            fd.append("accion", "procesar");
+            fd.append("ajax", "1");
+            const r = await fetch("rellenar_generos.php", { method: "POST", body: fd });
+            if (!r.ok) break;
+            const j = await r.json();
+            procesados += j.procesados;
+            if (estado && j.procesados > 0) {
+                estado.hidden = false;
+                estado.textContent = "🔎 Detectando géneros… quedan " + j.pendientes + " libros";
+            }
+            if (!j.pendientes || !j.procesados) break;
+        }
+    } catch (e) {}
+    if (procesados > 0) location.reload();
+})();
+<?php endif; ?>
 </script>
 
 </body>

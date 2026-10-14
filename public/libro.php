@@ -8,6 +8,7 @@ require_once "../src/RatingService.php";
 require_once "../src/ListaService.php";
 require_once "../src/UserService.php";
 require_once "../src/PortadasVerificadas.php";   
+require_once "../src/GenerosHelper.php";
 
 $authUser = Auth::usuario();
 $reviewService = new ReviewService();
@@ -463,6 +464,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
             $paginasLeidas = ($estado === "leido") ? $paginasTotalesAPI : 0;
             $listaService->actualizarPaginas($authUser["id"], $registro["id"], $paginasTotalesAPI, $paginasLeidas);
         }
+
+        // Detectar el género automáticamente al guardar el libro (no pisa los géneros corregidos a mano)
+        try {
+            $colGen = columnaGeneros($db->pdo);
+            if ($colGen !== null) {
+                $gens = detectarGenerosLibro($libroAPI, $titulo, $autor, (string)$id_externo, (string)$descripcion, true);
+                guardarGenerosSiVacios($db->pdo, (int)$authUser["id"], (int)$registro["id"], $colGen, $gens);
+            }
+        } catch (Throwable $e) {}
     }
 
     header("Location: perfil.php");
@@ -474,11 +484,26 @@ $estadoActual = null;
 $libroUser = null;
 $puntuacionUsuario = null;
 $miReseña = '';
+$colGenero = null;
 if ($authUser) {
     $stmt = $db->pdo->prepare("SELECT * FROM listas_lectura WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?) LIMIT 1");
     $stmt->execute([$authUser["id"], $id_externo, $titulo]);
     $libroUser = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($libroUser) $estadoActual = $libroUser["estado"];
+
+    // Libros ya guardados sin género: se detecta al abrir la ficha (sin consultas extra)
+    if ($libroUser) {
+        try {
+            $colGenero = columnaGeneros($db->pdo);
+            if ($colGenero !== null && generoPendiente((string)($libroUser[$colGenero] ?? ''))) {
+                $gens = detectarGenerosLibro($libroAPI, $titulo, $autor, (string)$id_externo, (string)$descripcion, false);
+                if ($gens) {
+                    guardarGenerosSiVacios($db->pdo, (int)$authUser["id"], (int)$libroUser["id"], $colGenero, $gens);
+                    $libroUser[$colGenero] = implode(', ', $gens);
+                }
+            }
+        } catch (Throwable $e) {}
+    }
 
     $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
     $miReseña = $reviewService->obtenerReseñaUsuario($authUser["id"], $id_externo);
@@ -492,10 +517,16 @@ if ($libroUser) {
 }
 $paginasMostrar = $paginasTotales > 0 ? $paginasTotales : $paginasTotalesAPI;
 
+// Géneros actuales del libro
+$genActuales = [];
+if ($libroUser && $colGenero !== null) {
+    $genActuales = normalizarGeneros(separarGeneros((string)($libroUser[$colGenero] ?? '')));
+}
+
 $reseñas = $reviewService->obtenerReseñas($id_externo);
 $medias  = $ratingService->obtenerMedias($id_externo);
 
-// URL de portada segura para usarla dentro de CSS url('...')
+// URL de portada segura para usarla dentro de CSS url
 $portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
 
 $estados = [
@@ -542,10 +573,11 @@ $metricas = [
                 <h1><?= htmlspecialchars($titulo) ?></h1>
                 <p class="lb-author"><?= htmlspecialchars($autor) ?></p>
 
-                <?php if ($paginasMostrar > 0 || $idioma !== ''): ?>
+                <?php if ($paginasMostrar > 0 || $idioma !== '' || !empty($genActuales)): ?>
                 <div class="lb-chips">
                     <?php if ($paginasMostrar > 0): ?><span class="lb-chip"><?= number_format($paginasMostrar, 0, '', '.') ?> páginas</span><?php endif; ?>
                     <?php if ($idioma !== ''): ?><span class="lb-chip"><?= htmlspecialchars(strtoupper($idioma)) ?></span><?php endif; ?>
+                    <?php foreach ($genActuales as $gChip): ?><span class="lb-chip"><?= estiloGenero($gChip)[0] ?> <?= htmlspecialchars($gChip) ?></span><?php endforeach; ?>
                     <?php if ($medias && $medias["media_estrellas"] !== null): ?><span class="lb-chip">★ <?= round($medias["media_estrellas"], 1) ?> de la comunidad</span><?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -622,6 +654,26 @@ $metricas = [
                 <div class="lb-bar"><div style="width: <?= (int)$progreso ?>%"></div></div>
                 <a href="editar_libro.php?id=<?= (int)$libroUser["id"] ?>" class="lb-link">✏️ Editar progreso</a>
             </section>
+
+            <?php if ($colGenero !== null): ?>
+            <section class="lb-card">
+                <h2>Géneros</h2>
+                <form method="POST" action="guardar_generos.php" class="lb-generos">
+                    <input type="hidden" name="registro_id" value="<?= (int)$libroUser["id"] ?>">
+                    <input type="hidden" name="libro_ref" value="<?= htmlspecialchars($id_externo) ?>">
+                    <div class="lb-generos-chips">
+                        <?php foreach (array_keys(reglasGeneros()) as $g): ?>
+                            <label class="lb-gen-chip">
+                                <input type="checkbox" name="generos[]" value="<?= htmlspecialchars($g) ?>" <?= in_array($g, $genActuales, true) ? 'checked' : '' ?>>
+                                <span><?= estiloGenero($g)[0] ?> <?= htmlspecialchars($g) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="lb-empty">Se detectan solos. Si no son correctos, marca hasta 3.</p>
+                    <button type="submit" class="lb-btn">Guardar géneros</button>
+                </form>
+            </section>
+            <?php endif; ?>
 
             <section class="lb-card">
                 <h2>Gestionar libro</h2>
@@ -709,6 +761,16 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.textContent = cerrado ? 'Leer más' : 'Leer menos';
         });
     }
+
+    // Géneros: máximo 3 marcados a la vez
+    document.querySelectorAll('.lb-generos').forEach(f => {
+        const limitar = () => {
+            const n = f.querySelectorAll('input:checked').length;
+            f.querySelectorAll('input[type=checkbox]:not(:checked)').forEach(i => { i.disabled = n >= 3; });
+        };
+        f.addEventListener('change', limitar);
+        limitar();
+    });
 
     // Selector de puntuación (admite medias puntuaciones)
     function updateVisuals(container, val) {

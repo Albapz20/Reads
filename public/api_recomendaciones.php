@@ -1,5 +1,5 @@
 <?php
-ini_set('display_errors', '0');  
+ini_set('display_errors', '0'); 
 @set_time_limit(45);
 
 require_once "../src/Auth.php";
@@ -25,126 +25,113 @@ const CUPO_POR_LIBRO = 4;   // objetivo de recomendaciones por libro base
 const TOTAL_MIN      = 8;
 const TOTAL_MAX      = 12;
 
-// Helpers
+/* Helpers de texto*/
 function limpiarTexto(string $s): string {
-    $s = mb_strtolower($s, 'UTF-8');
-    $s = strtr($s, ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n',
-                    'à'=>'a','è'=>'e','ì'=>'i','ò'=>'o','ù'=>'u']);
+    $s = strtr(mb_strtolower($s, 'UTF-8'), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n',
+                                           'à'=>'a','è'=>'e','ì'=>'i','ò'=>'o','ù'=>'u']);
     return trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9\s]/', ' ', $s)));
 }
-
 function sinParentesis(string $t): string {
     return trim(preg_replace('/\s+/', ' ', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $t)));
 }
-
 function tituloBase(string $t): string {
     $t = sinParentesis($t);
-    $t = preg_split('/\s*[:\x{2013}\x{2014}]\s*|\s+-\s+/u', $t)[0] ?? $t;
-    return limpiarTexto($t);
+    return limpiarTexto(preg_split('/\s*[:\x{2013}\x{2014}]\s*|\s+-\s+/u', $t)[0] ?? $t);
 }
 
-function autorPrincipalCoincide(array $autoresDoc, string $autorBuscado): bool {
-    $buscado = limpiarTexto($autorBuscado);
-    if ($buscado === '') return true;
-    if (empty($autoresDoc)) return false;
-    return limpiarTexto($autoresDoc[0]) === $buscado;
+function claveAutor(string $n): string {
+    $t = array_values(array_filter(explode(' ', limpiarTexto($n)), fn($w) => strlen($w) > 1));
+    return count($t) >= 2 ? $t[0] . ' ' . end($t) : implode(' ', $t);
 }
 
-function subjectUtil(string $s): bool {
-    $l = mb_strtolower(trim($s), 'UTF-8');
-    if ($l === '' || mb_strlen($l) > 40) return false;
-    $prohibidas = ['accessible book', 'protected daisy', 'in library', 'large type',
-                   'lending library', 'internet archive', 'overdrive', 'open library',
-                   'nyt:', 'reading level', 'new york times', 'bestseller', 'best seller',
-                   'juvenile literature', 'english language', 'spanish language',
-                   'history and criticism', 'translations', 'textbooks'];
-    foreach ($prohibidas as $p) {
-        if (str_contains($l, $p)) return false;
-    }
-    return !preg_match('/\d{4}/', $l);
-}
-
-// Últimos libros leídos por el usuario, para basar las recomendaciones
+/* Últimos libros leídos  */
+$cols = "libro_id, titulo, autores, categorias";
 $stmt = $db->pdo->prepare(
-    "SELECT libro_id, titulo, autores
-     FROM listas_lectura
+    "SELECT $cols FROM listas_lectura
      WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?
-     ORDER BY fecha_fin DESC, id DESC
-     LIMIT " . NUM_BASE
+     ORDER BY fecha_fin DESC, id DESC LIMIT " . NUM_BASE
 );
 $stmt->execute([$usuario["id"], $year]);
 $ultimos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 if (empty($ultimos)) {
     $stmt = $db->pdo->prepare(
-        "SELECT libro_id, titulo, autores
-         FROM listas_lectura
+        "SELECT $cols FROM listas_lectura
          WHERE usuario_id = ? AND estado = 'leido'
-         ORDER BY fecha_fin DESC, id DESC
-         LIMIT " . NUM_BASE
+         ORDER BY fecha_fin DESC, id DESC LIMIT " . NUM_BASE
     );
     $stmt->execute([$usuario["id"]]);
     $ultimos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
-
 if (empty($ultimos)) {
     echo json_encode(['basadoEn' => [], 'libros' => []]);
     exit;
 }
 
-// Idioma preferido del usuario, para filtrar resultados de Open Library
+/* Idioma preferido  */
 $idiomaPref = 'spa';
 try {
     $stmt = $db->pdo->prepare("SELECT idioma_lectura FROM ajustes_usuario WHERE usuario_id = ? LIMIT 1");
     $stmt->execute([$usuario["id"]]);
     $v = $stmt->fetchColumn();
     if ($v !== false && $v !== null) $idiomaPref = (string)$v;
-} catch (Exception $e) {
-    // Si la columna aún no existe, usar español por defecto
-}
-define('IDIOMA', $idiomaPref);
+} catch (Exception $e) {}
 
-// Cache de resultados para no saturar la API externa y mejorar tiempos de respuesta
-$cacheKey = 'rec8_' . IDIOMA . '_' . md5(json_encode(array_column($ultimos, 'libro_id')));
-if (isset($_SESSION[$cacheKey]) && (time() - $_SESSION[$cacheKey]['t']) < 6 * 3600) {
+// Ajustes guarda códigos de 3 letras
+$mapaIdioma = ['spa' => 'es', 'eng' => 'en', 'cat' => 'ca', 'fra' => 'fr', 'ita' => 'it', 'por' => 'pt', 'deu' => 'de'];
+define('IDIOMA', $idiomaPref);
+define('LANG_GB', $mapaIdioma[$idiomaPref] ?? '');   // '' = cualquier idioma
+
+/* Caché en sesión */
+$cacheKey = 'rec9_' . IDIOMA . '_' . md5(json_encode(array_column($ultimos, 'libro_id')));
+if (!isset($_GET['debug']) && isset($_SESSION[$cacheKey]) && (time() - $_SESSION[$cacheKey]['t']) < 6 * 3600) {
     echo json_encode($_SESSION[$cacheKey]['data'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// Lo que el usuario ya tiene
+/* Lo que el usuario ya tiene  */
 $stmt = $db->pdo->prepare("SELECT libro_id, titulo FROM listas_lectura WHERE usuario_id = ?");
 $stmt->execute([$usuario["id"]]);
 $yaTiene = ['ids' => [], 'bases' => []];
 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $yaTiene['ids'][] = (string)$r['libro_id'];
-    $base = tituloBase((string)$r['titulo']);
-    if ($base !== '') $yaTiene['bases'][$base] = true;
+    $b = tituloBase((string)$r['titulo']);
+    if ($b !== '') $yaTiene['bases'][$b] = true;
 }
 
-// Liberar el bloqueo de sesión mientras se consulta la API externa
-session_write_close();
+session_write_close();   // no bloquear otras peticiones mientras se consulta la API
 
-// Helpers para Open Library
-function buscarVarios(array $peticiones): array {
+/*  API key de Google Books  */
+$apiKey = getenv('GOOGLE_BOOKS_API_KEY') ?: '';
+$archivoConfig = __DIR__ . '/../src/config.local.php';
+if ($apiKey === '' && is_file($archivoConfig)) {
+    $cfg = require $archivoConfig;
+    $apiKey = is_array($cfg) ? trim((string)($cfg['google_books_key'] ?? '')) : '';
+}
+if (str_contains($apiKey, 'PEGA_AQUI')) $apiKey = '';   
+
+/*  Google Books en paralelo  */
+function googleVarios(array $peticiones, string $apiKey): array {
     $mh = curl_multi_init();
     $handles = [];
 
-    foreach ($peticiones as $k => $params) {
-        $params['fields'] = 'key,title,author_name,cover_i,subject,language';
+    foreach ($peticiones as $k => $p) {
+        $url = 'https://www.googleapis.com/books/v1/volumes?' . http_build_query(array_filter([
+            'q'          => $p['q'],
+            'printType'  => 'books',
+            'maxResults' => $p['max'] ?? 40,
+            'langRestrict' => (!empty($p['lang']) && LANG_GB !== '') ? LANG_GB : null,
+            'key'        => $apiKey !== '' ? $apiKey : null,
+        ], fn($v) => $v !== null));
 
-        // Filtrar por idioma (salvo en búsquedas por título o si se indica 'language' => '')
-        if (!isset($params['language']) && !isset($params['title']) && IDIOMA !== '') {
-            $params['language'] = IDIOMA;
-        }
-        if (($params['language'] ?? null) === '') unset($params['language']);
-
-        $ch = curl_init('https://openlibrary.org/search.json?' . http_build_query($params));
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_TIMEOUT        => 10,
-            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (contacto@tudominio.com)',
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_USERAGENT      => 'ReadsApp/1.0',
         ]);
         curl_multi_add_handle($mh, $ch);
         $handles[$k] = $ch;
@@ -157,9 +144,10 @@ function buscarVarios(array $peticiones): array {
 
     $salida = [];
     foreach ($handles as $k => $ch) {
-        $resp = curl_multi_getcontent($ch);
-        $json = $resp ? json_decode($resp, true) : null;
-        $salida[$k] = $json['docs'] ?? [];
+        $json = json_decode((string)curl_multi_getcontent($ch), true);
+        $salida[$k] = $json['items'] ?? [];
+        $GLOBALS['gb_log'][$k] = 'HTTP ' . curl_getinfo($ch, CURLINFO_HTTP_CODE) . ' · ' . count($salida[$k]) . ' resultados'
+                               . (isset($json['error']['message']) ? ' · ' . $json['error']['message'] : '');
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
     }
@@ -167,55 +155,65 @@ function buscarVarios(array $peticiones): array {
     return $salida;
 }
 
-function normalizar(array $doc): array {
-    $id = str_replace('/works/', '', $doc['key'] ?? '');
-    $portada = !empty($doc['cover_i'])
-        ? "https://covers.openlibrary.org/b/id/{$doc['cover_i']}-M.jpg?default=false"
-        : null;
+// Convierte un resultado de Google en nuestro formato
+function normalizar(array $item): array {
+    $vi = $item['volumeInfo'] ?? [];
+    $img = $vi['imageLinks']['thumbnail'] ?? $vi['imageLinks']['smallThumbnail'] ?? '';
+    if ($img !== '') $img = str_replace(['http://', '&edge=curl'], ['https://', ''], $img);
 
     return [
-        'id'      => $id,
-        'titulo'  => $doc['title'] ?? 'Sin título',
-        'autor'   => $doc['author_name'][0] ?? 'Autor desconocido',
-        'portada' => $portada,
-        'autores' => $doc['author_name'] ?? [],
+        'id'        => (string)($item['id'] ?? ''),
+        'titulo'    => (string)($vi['title'] ?? ''),
+        'autor'     => (string)($vi['authors'][0] ?? 'Autor desconocido'),
+        'autores'   => $vi['authors'] ?? [],
+        'portada'   => $img,
+        'paginas'   => (int)($vi['pageCount'] ?? 0),
+        'idioma'    => (string)($vi['language'] ?? ''),
+        'conDesc'   => !empty($vi['description']),
+        'categorias'=> $vi['categories'] ?? [],
     ];
 }
 
-function tematicasDeDocs(array $docs, int $max = 3): array {
-    $conteo = [];
-    foreach ($docs as $doc) {
-        foreach ($doc['subject'] ?? [] as $s) {
-            if (!subjectUtil($s)) continue;
-            $k = mb_strtolower(trim($s), 'UTF-8');
-            $conteo[$k] = ($conteo[$k] ?? 0) + 1;
+// sin etiquetas genéricas
+function generosDe(array $cadenas, int $max = 2): array {
+    $cuenta = [];
+    foreach ($cadenas as $c) {
+        foreach (preg_split('/[\/,]/', (string)$c) as $g) {
+            $g = trim($g);
+            if ($g === '' || strcasecmp($g, 'General') === 0) continue;
+            $cuenta[$g] = ($cuenta[$g] ?? 0) + 1;
         }
     }
-    arsort($conteo);
-    return array_slice(array_keys($conteo), 0, $max);
+    arsort($cuenta);
+    $genericos = ['fiction', 'juvenile fiction', 'literary collections', 'young adult fiction'];
+    $buenos = array_filter(array_keys($cuenta), fn($g) => !in_array(mb_strtolower($g), $genericos, true));
+    $lista = array_values($buenos) ?: array_keys($cuenta);
+    return array_slice($lista, 0, $max);
 }
 
-// Autor + libros leídos por el usuario, para limitar recomendaciones de autores ya leídos
+/* Ronda 1: libros del mismo autor + géneros de cada libro leído  */
 $vistos        = [];
 $autoresGlobal = [];
 
-$aceptar = function (array &$destino, array $doc, ?string $exigirAutor = null) use (&$vistos, &$autoresGlobal, $yaTiene) {
-    $l = normalizar($doc);
-    if (empty($l['portada']) || $l['id'] === '') return false;
-    if ($exigirAutor !== null && !autorPrincipalCoincide($l['autores'], $exigirAutor)) return false;
+$aceptar = function (array &$destino, array $item, ?string $exigirAutor = null, bool $filtrarIdioma = true)
+        use (&$vistos, &$autoresGlobal, $yaTiene) {
+    $l = normalizar($item);
+    if ($l['id'] === '' || $l['titulo'] === '' || $l['portada'] === '' || !$l['conDesc']) return false;
+    if ($l['paginas'] > 0 && $l['paginas'] < 60) return false;                      
+    if ($filtrarIdioma && LANG_GB !== '' && $l['idioma'] !== '' && $l['idioma'] !== LANG_GB) return false;
+    if ($exigirAutor !== null && !in_array($exigirAutor, array_map('claveAutor', $l['autores']), true)) return false;
 
     $base = tituloBase($l['titulo']);
     if ($base === '' || isset($vistos[$base]) || isset($yaTiene['bases'][$base])) return false;
     if (in_array($l['id'], $yaTiene['ids'], true)) return false;
 
     // Variedad: máx. 2 libros por autor ajeno en el total
-    $claveAutor = limpiarTexto($l['autor']);
-    if ($exigirAutor === null && ($autoresGlobal[$claveAutor] ?? 0) >= 2) return false;
+    $claveA = claveAutor($l['autor']);
+    if ($exigirAutor === null && ($autoresGlobal[$claveA] ?? 0) >= 2) return false;
 
-    $autoresGlobal[$claveAutor] = ($autoresGlobal[$claveAutor] ?? 0) + 1;
+    $autoresGlobal[$claveA] = ($autoresGlobal[$claveA] ?? 0) + 1;
     $vistos[$base] = true;
-    unset($l['autores']);
-    $destino[] = $l;
+    $destino[] = ['id' => $l['id'], 'titulo' => $l['titulo'], 'autor' => $l['autor'], 'portada' => $l['portada']];
     return true;
 };
 
@@ -223,58 +221,67 @@ $autores = [];
 $ronda1  = [];
 foreach ($ultimos as $i => $libro) {
     $autores[$i] = trim(explode(',', $libro['autores'] ?? '')[0]);
+    $tituloLimpio = sinParentesis($libro['titulo']);
 
     if ($autores[$i] !== '') {
-        $ronda1["a$i"] = ['author' => $autores[$i], 'sort' => 'editions', 'limit' => 40];
+        $ronda1["a$i"] = ['q' => 'inauthor:"' . $autores[$i] . '"', 'lang' => true, 'max' => 40];
     }
-    $p = ['title' => sinParentesis($libro['titulo']), 'limit' => 3];
-    if ($autores[$i] !== '') $p['author'] = $autores[$i];
-    $ronda1["t$i"] = $p;
+    // El libro leído (en cualquier idioma) para conocer sus géneros
+    $ronda1["t$i"] = ['q' => 'intitle:"' . $tituloLimpio . '"' . ($autores[$i] !== '' ? ' inauthor:"' . $autores[$i] . '"' : ''),
+                      'lang' => false, 'max' => 5];
 }
-$res1 = buscarVarios($ronda1);
+$res1 = googleVarios($ronda1, $apiKey);
 
-$porLibro          = [];
-$tematicasPorLibro = [];
+$porLibro  = [];
+$generosPorLibro = [];
 foreach ($ultimos as $i => $libro) {
-    $lista    = [];
+    $lista = [];
     $delAutor = 0;
+    $clave = $autores[$i] !== '' ? claveAutor($autores[$i]) : null;
 
-    foreach ($res1["a$i"] ?? [] as $doc) {
-        if ($aceptar($lista, $doc, $autores[$i])) $delAutor++;
-        if ($delAutor >= MAX_POR_AUTOR) break;
+    if ($clave !== null) {
+        foreach ($res1["a$i"] ?? [] as $item) {
+            if ($aceptar($lista, $item, $clave)) $delAutor++;
+            if ($delAutor >= MAX_POR_AUTOR) break;
+        }
     }
+    $porLibro[$i] = $lista;
 
-    $porLibro[$i]          = $lista;
-    $tematicasPorLibro[$i] = tematicasDeDocs($res1["t$i"] ?? [], 3);
+    // Géneros: los guardados en la base de datos y los que informa Google
+    $cadenas = [(string)($libro['categorias'] ?? '')];
+    foreach ($res1["t$i"] ?? [] as $it) {
+        foreach ($it['volumeInfo']['categories'] ?? [] as $c) $cadenas[] = $c;
+    }
+    $generosPorLibro[$i] = generosDe(array_filter($cadenas), 2);
 }
 
-// Temáticas más frecuentes entre los libros base, para buscar más libros de esas temáticas
-$conteoTematicas = [];
-foreach ($tematicasPorLibro as $ts) {
-    foreach ($ts as $t) $conteoTematicas[$t] = ($conteoTematicas[$t] ?? 0) + 1;
+/* Ronda 2: libros de los mismos géneros */
+$conteoGeneros = [];
+foreach ($generosPorLibro as $gs) {
+    foreach ($gs as $g) $conteoGeneros[$g] = ($conteoGeneros[$g] ?? 0) + 1;
 }
-arsort($conteoTematicas);
-$subjectsUnicos = array_slice(array_keys($conteoTematicas), 0, 8);
+arsort($conteoGeneros);
+$generosUnicos = array_slice(array_keys($conteoGeneros), 0, 8);
 
 $ronda2 = [];
-foreach ($subjectsUnicos as $s) {
-    $ronda2["s:$s"] = ['subject' => $s, 'sort' => 'editions', 'limit' => 30];
+foreach ($generosUnicos as $g) {
+    $ronda2["g:$g"] = ['q' => 'subject:"' . $g . '"', 'lang' => true, 'max' => 40];
 }
-$ronda2['fiction'] = ['subject' => 'fiction', 'sort' => 'rating', 'limit' => 40];
-$res2 = buscarVarios($ronda2);
+$ronda2['ficcion']       = ['q' => 'subject:"Fiction"', 'lang' => true,  'max' => 40];
+$ronda2['ficcion_otros'] = ['q' => 'subject:"Fiction"', 'lang' => false, 'max' => 40];   // red de seguridad
+$res2 = googleVarios($ronda2, $apiKey);
 
-// Completar cada libro base con SUS temáticas
 foreach ($ultimos as $i => $libro) {
-    foreach ($tematicasPorLibro[$i] as $s) {
+    foreach ($generosPorLibro[$i] as $g) {
         if (count($porLibro[$i]) >= CUPO_POR_LIBRO) break;
-        foreach ($res2["s:$s"] ?? [] as $doc) {
-            $aceptar($porLibro[$i], $doc);
+        foreach ($res2["g:$g"] ?? [] as $item) {
+            $aceptar($porLibro[$i], $item);
             if (count($porLibro[$i]) >= CUPO_POR_LIBRO) break;
         }
     }
 }
 
-// Mezclar todas las recomendaciones en un solo array, respetando el orden de los libros base y sus temáticas
+/* Mezclar alternando */
 $resultado = [];
 $max = empty($porLibro) ? 0 : max(array_map('count', $porLibro));
 for ($k = 0; $k < $max; $k++) {
@@ -283,27 +290,25 @@ for ($k = 0; $k < $max; $k++) {
     }
 }
 
-// Si no hay suficientes resultados, completar con temáticas de los libros base
+/* Rellenos para no dejarlo vacío */
 if (count($resultado) < TOTAL_MIN) {
-    foreach ($subjectsUnicos as $s) {
-        foreach ($res2["s:$s"] ?? [] as $doc) {
-            $aceptar($resultado, $doc);
+    foreach ($generosUnicos as $g) {
+        foreach ($res2["g:$g"] ?? [] as $item) {
+            $aceptar($resultado, $item);
             if (count($resultado) >= TOTAL_MAX) break 2;
         }
     }
 }
 if (count($resultado) < TOTAL_MIN) {
-    foreach ($res2['fiction'] ?? [] as $doc) {
-        $aceptar($resultado, $doc);
+    foreach ($res2['ficcion'] ?? [] as $item) {
+        $aceptar($resultado, $item);
         if (count($resultado) >= TOTAL_MAX) break;
     }
 }
-
-// Red de seguridad: si en mi idioma casi no hay resultados, ficción popular de cualquier idioma
+// Último recurso: si en tu idioma casi no hay nada, ficción de cualquier idioma
 if (count($resultado) < 4) {
-    $extra = buscarVarios(['x' => ['subject' => 'fiction', 'sort' => 'rating', 'limit' => 40, 'language' => '']]);
-    foreach ($extra['x'] ?? [] as $doc) {
-        $aceptar($resultado, $doc);
+    foreach ($res2['ficcion_otros'] ?? [] as $item) {
+        $aceptar($resultado, $item, null, false);
         if (count($resultado) >= TOTAL_MIN) break;
     }
 }
@@ -313,7 +318,26 @@ $respuesta = [
     'libros'   => array_slice($resultado, 0, TOTAL_MAX),
 ];
 
-if (!empty($respuesta['libros'])) {
+if (isset($_GET['debug'])) {
+    $respuesta['debug'] = [
+        'fuente'        => 'Google Books (si ves este campo, el archivo NUEVO está activo)',
+        'idioma_ajuste' => IDIOMA,
+        'langRestrict'  => LANG_GB !== '' ? LANG_GB : '(cualquier idioma)',
+        'api_key'       => $apiKey !== '' ? 'sí, configurada' : 'NO configurada (Google te limitará)',
+        'config'        => [
+            'ruta_buscada'     => $archivoConfig,
+            'el_archivo_existe' => is_file($archivoConfig),
+            'devuelve_array'   => isset($cfg) ? is_array($cfg) : 'no se llegó a cargar',
+            'claves_que_trae'  => (isset($cfg) && is_array($cfg)) ? array_keys($cfg) : [],
+            'longitud_de_clave' => strlen($apiKey),
+            'empieza_por'      => $apiKey !== '' ? substr($apiKey, 0, 4) . '…' : '',
+            'variable_entorno' => getenv('GOOGLE_BOOKS_API_KEY') ? 'definida' : 'no definida',
+        ],
+        'consultas'     => $GLOBALS['gb_log'] ?? [],
+    ];
+}
+
+if (!empty($respuesta['libros']) && !isset($_GET['debug'])) {
     @session_start();
     $_SESSION[$cacheKey] = ['t' => time(), 'data' => $respuesta];
     session_write_close();
