@@ -11,9 +11,7 @@ $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
 $db = new Database();
 
-/* ---------------------------------------------------------------
-   Utilidades
----------------------------------------------------------------- */
+/* Utilidades */
 function fechaValida(string $f): bool {
     $d = DateTime::createFromFormat('Y-m-d', $f);
     return $d && $d->format('Y-m-d') === $f;
@@ -40,9 +38,7 @@ function sincronizarPaginasLibro(PDO $pdo, int $uid, int $idLista): void {
         ->execute([(int)$ultima, $idLista, $uid]);
 }
 
-/* ---------------------------------------------------------------
-   Acciones (todas por POST)
----------------------------------------------------------------- */
+/*  Acciones (todas por POST) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $accion = $_POST['accion'] ?? '';
 
@@ -111,9 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirigirAlMes();
 }
 
-/* ---------------------------------------------------------------
-   Mes y año a mostrar
----------------------------------------------------------------- */
+/*  Mes y año a mostrar */
 $mesActual  = isset($_GET['mes'])  ? (int)$_GET['mes']  : (int)date('n');
 $yearActual = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
 if ($mesActual < 1)  { $mesActual = 12; $yearActual--; }
@@ -127,9 +121,6 @@ if ($mesPrev < 1)  { $mesPrev = 12; $yearPrev--; }
 $mesNext  = $mesActual + 1; $yearNext = $yearActual;
 if ($mesNext > 12) { $mesNext = 1;  $yearNext++; }
 
-/* ---------------------------------------------------------------
-   Datos
----------------------------------------------------------------- */
 // Libros que estoy leyendo ahora
 $stmtMisLibros = $db->pdo->prepare("SELECT id, titulo, paginas_totales, paginas_leidas
                                     FROM listas_lectura
@@ -420,6 +411,11 @@ function textoCuentaAtras(string $fecha): string {
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
+        </a>
+
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
         </a>
 
           <a href="ajustes.php" class="nav-card-float">

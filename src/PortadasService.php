@@ -4,22 +4,12 @@ require_once __DIR__ . '/PortadasVerificadas.php';
 class PortadasService {
 
     private const DIR_UPLOADS = __DIR__ . '/../public/uploads/portadas/';
-
     public static function obtenerPortada($tituloOriginal, $autor = '', $libroId = null, $isbn = '') {
         $idUnico = $libroId ?: md5($tituloOriginal);
 
-        // Búsqueda verificada: prueba ISBN, Open Library, Apple y Google
-        // y elige la mejor coincidencia comprobando título + autor.
         $resultado = PortadasVerificadas::buscar($tituloOriginal, $autor, $isbn);
         if ($resultado && !empty($resultado['url'])) {
             if ($ruta = self::descargarImagenLocal($resultado['url'], $idUnico)) {
-                return $ruta;
-            }
-        }
-
-        // Si la búsqueda estricta no encontró nada, probar candidatos flexibles
-        foreach (PortadasVerificadas::candidatos($tituloOriginal, $autor, 12) as $c) {
-            if (!empty($c['url']) && $ruta = self::descargarImagenLocal($c['url'], $idUnico)) {
                 return $ruta;
             }
         }
@@ -38,6 +28,15 @@ class PortadasService {
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
 
         return file_put_contents($rutaFisica, $contenido) !== false;
+    }
+
+    /** Guarda en disco una imagen que ya se ha descargado (comprobando que lo es) */
+    public static function guardarBytes(string $bytes, string $rutaFisica): bool {
+        $info = @getimagesizefromstring($bytes);
+        if (!$info || $info[0] < 60 || $info[1] < 90) return false;
+        $dir = dirname($rutaFisica);
+        if (!is_dir($dir)) @mkdir($dir, 0777, true);
+        return file_put_contents($rutaFisica, $bytes) !== false;
     }
 
     private static function descargarImagenLocal($urlImagen, $idUnico) {

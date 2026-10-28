@@ -4,8 +4,8 @@ require_once "../src/Database.php";
 require_once "../src/PortadasService.php";
 
 $usuario = Auth::usuario();
-$tema = $usuario["tema_visual"] ?? "pastel";
 if (!$usuario) { header("Location: login.php"); exit; }
+$tema = $usuario["tema_visual"] ?? "pastel";
 
 $db = new Database();
 
@@ -14,6 +14,8 @@ if (!isset($_GET["id"])) {
 }
 
 $id = $_GET["id"];
+
+$volver = $_GET["volver"] ?? "";
 
 // Obtener datos del libro
 $sql = "SELECT * FROM listas_lectura WHERE id = ? AND usuario_id = ?";
@@ -27,47 +29,50 @@ if (!$libro) {
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
-    $titulo = $_POST["titulo"];
-    $estado = $_POST["estado"];
-    $fecha_fin = $_POST["fecha_fin"];
-    $estrellas = $_POST["estrellas"];
-    $paginas_leidas = (int)$_POST["paginas_leidas"];
+    $titulo = trim($_POST["titulo"] ?? $libro["titulo"]);
+    $estado = $_POST["estado"] ?? $libro["estado"];
 
-    // Actualizar páginas totales y portada si el título cambia
+    // Fecha vacía = NULL (una cadena vacía rompe la columna DATE)
+    $fecha_fin = trim($_POST["fecha_fin"] ?? "");
+    $fecha_fin = ($fecha_fin !== "") ? $fecha_fin : null;
 
+    // Estrellas: si llega vacío se conserva la que había
+    $estrellas = (isset($_POST["estrellas"]) && $_POST["estrellas"] !== "")
+        ? (float)$_POST["estrellas"]
+        : $libro["estrellas"];
+
+    $paginas_totales = max(0, (int)($_POST["paginas_totales"] ?? $libro["paginas_totales"]));
+    $paginas_leidas  = max(0, (int)($_POST["paginas_leidas"] ?? 0));
+
+    // Si cambia el título, se intenta buscar la portada nueva (PortadasService no tiene obtenerDatosLibro)
+    $portada = $libro["portada"];
     if ($titulo !== $libro["titulo"]) {
-
-        // Si cambia el título → obtener datos nuevos
-        $datos = PortadasService::obtenerDatosLibro($titulo);
-
-        $portada = $datos["portada"] ?? $libro["portada"];
-
-        // Si la API devuelve páginas → usar esas
-        // Si no → mantener las que ya tenía
-        $paginas_totales = $datos["paginas_totales"] ?? $libro["paginas_totales"];
-
-    } else {
-
-        // Si NO cambia el título → mantener todo igual
-        $portada = $libro["portada"];
-        $paginas_totales = $libro["paginas_totales"];
+        $autorPrincipal = trim(explode(',', (string)($libro["autores"] ?? ''))[0]);
+        $nueva = PortadasService::obtenerPortada($titulo, $autorPrincipal, (int)$libro["id"], '');
+        if ($nueva) $portada = $nueva;
     }
 
-    // Ajustar páginas leídas según el estado del libro
-
-    if ($estado === "leido") {
+    // Las páginas leídas no pueden superar el total
+    if ($paginas_totales > 0 && $paginas_leidas > $paginas_totales) {
         $paginas_leidas = $paginas_totales;
     }
 
-    if ($estado === "pendiente") {
+    // Progreso según el estado
+    if ($estado === "leido") {
+        if ($paginas_totales > 0) $paginas_leidas = $paginas_totales;
+        $progreso = 100;
+        if ($fecha_fin === null) $fecha_fin = date("Y-m-d");   // para que cuente en estadísticas y Wrap Up
+    } elseif (in_array($estado, ["guardado", "tbr", "pendiente"], true)) {
         $paginas_leidas = 0;
-    }
-
-    // Calcular progreso automáticamente
-
-    $progreso = 0;
-    if ($paginas_totales > 0) {
-        $progreso = round(($paginas_leidas / $paginas_totales) * 100);
+        $progreso = 0;
+    } else {
+        if ($paginas_totales > 0) {
+            // Con páginas totales, el porcentaje sale de las páginas leídas
+            $progreso = (int)round(($paginas_leidas / $paginas_totales) * 100);
+        } else {
+            // Sin páginas totales, se usa el porcentaje escrito a mano
+            $progreso = max(0, min(100, (int)($_POST["progreso"] ?? $libro["progreso"] ?? 0)));
+        }
     }
 
     // Guardar cambios en la base de datos
@@ -89,7 +94,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $usuario["id"]
     ]);
 
-    header("Location: perfil.php");
+    if ($volver === "libro") {
+        $ref = !empty($libro["libro_id"]) ? $libro["libro_id"] : $libro["id"];
+        header("Location: libro.php?id=" . urlencode((string)$ref));
+    } else {
+        header("Location: perfil.php");
+    }
     exit;
 }
 ?>
@@ -98,7 +108,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<link rel="stylesheet" href="/Reads/temas/<?= $tema ?>.css">
+<link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css">
 <link rel="stylesheet" href="/Reads/public/css/styles.css">
 <title>Editar libro</title>
 </head>
@@ -119,19 +129,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             <label><strong>Estado:</strong></label><br>
             <select name="estado">
-                <option value="pendiente" <?= $libro["estado"] === "pendiente" ? "selected" : "" ?>>Pendiente</option>
-                <option value="leyendo" <?= $libro["estado"] === "leyendo" ? "selected" : "" ?>>Leyendo</option>
-                <option value="leido" <?= $libro["estado"] === "leido" ? "selected" : "" ?>>Leído</option>
+                <?php if ($libro["estado"] === "pendiente"): ?>
+                    <option value="pendiente" selected>Pendiente</option>
+                <?php endif; ?>
+                <option value="guardado"   <?= $libro["estado"] === "guardado"   ? "selected" : "" ?>>🎁 Wishlist</option>
+                <option value="tbr"        <?= $libro["estado"] === "tbr"        ? "selected" : "" ?>>🎯 TBR</option>
+                <option value="leyendo"    <?= $libro["estado"] === "leyendo"    ? "selected" : "" ?>>📖 Leyendo</option>
+                <option value="leido"      <?= $libro["estado"] === "leido"      ? "selected" : "" ?>>✅ Leído</option>
+                <option value="abandonado" <?= $libro["estado"] === "abandonado" ? "selected" : "" ?>>❌ Abandonado</option>
             </select><br><br>
 
             <label><strong>Fecha fin:</strong></label><br>
-            <input type="date" name="fecha_fin" value="<?= $libro['fecha_fin'] ?>"><br><br>
+            <input type="date" name="fecha_fin" value="<?= htmlspecialchars($libro['fecha_fin'] ?? '') ?>"><br><br>
 
             <label><strong>Estrellas:</strong></label><br>
-            <input type="number" step="0.5" min="0" max="5" name="estrellas" value="<?= $libro['estrellas'] ?>"><br><br>
+            <input type="number" step="0.5" min="0" max="5" name="estrellas" value="<?= htmlspecialchars((string)($libro['estrellas'] ?? '')) ?>"><br><br>
+
+            <label><strong>Páginas totales:</strong></label><br>
+            <input type="number" min="0" name="paginas_totales" value="<?= (int)$libro['paginas_totales'] ?>"><br><br>
 
             <label><strong>Páginas leídas:</strong></label><br>
-            <input type="number" name="paginas_leidas" value="<?= $libro['paginas_leidas'] ?>"><br><br>
+            <input type="number" min="0" name="paginas_leidas" value="<?= (int)$libro['paginas_leidas'] ?>"><br><br>
+
+            <label><strong>Progreso (%):</strong></label><br>
+            <input type="number" min="0" max="100" name="progreso" value="<?= (int)($libro['progreso'] ?? 0) ?>">
+            <br><small>Solo se usa si el libro no tiene páginas totales; si las tiene, el porcentaje se calcula solo con las páginas leídas.</small><br><br>
 
             <button type="submit">Guardar cambios</button>
 

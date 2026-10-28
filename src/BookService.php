@@ -1,14 +1,19 @@
 <?php
 
 class BookService {
+    private function apiKey(): string {
+        return function_exists('config') ? trim((string)config('google_books_key', '')) : '';
+    }
 
     // Buscar libros por título o autor usando Google Books y Open Library
     public function buscarLibros($query) {
 
         $queryUrl = urlencode($query);
+        $key = $this->apiKey();
 
-        // Google Books
-        $urlGoogle = "https://www.googleapis.com/books/v1/volumes?q={$queryUrl}&maxResults=20";
+        // Google Books 
+        $urlGoogle = "https://www.googleapis.com/books/v1/volumes?q={$queryUrl}&maxResults=20&printType=books"
+                   . ($key !== '' ? "&key=" . urlencode($key) : '');
         $google = $this->curlGet($urlGoogle);
 
         $resultados = [];
@@ -68,21 +73,22 @@ class BookService {
         return [];
     }
 
- // Obtener detalles de un libro por API Key
+    // Obtener detalles de un libro (Google Books por id, u Open Library si el id empieza por OL)
     public function obtenerLibro($id) {
 
-        $apiKey = "AIzaSyBWAS9W-oky5pAt-GlDDSUCv5KEraFA7qI";
+        $key = $this->apiKey();
 
         $esOpenLibrary = (substr($id, 0, 7) === "/works/" || substr($id, 0, 2) === "OL");
 
-        // GOOGLE BOOKS (Directo por ID con API Key)
+        // GOOGLE BOOKS (directo por ID)
         if (!$esOpenLibrary) {
-            $urlGoogle = "https://www.googleapis.com/books/v1/volumes/" . urlencode($id) . "?key={$apiKey}";
+            $urlGoogle = "https://www.googleapis.com/books/v1/volumes/" . urlencode($id)
+                       . ($key !== '' ? "?key=" . urlencode($key) : '');
             $google = $this->curlGet($urlGoogle);
 
             if ($google && isset($google["volumeInfo"])) {
                 $info = $google["volumeInfo"];
-                
+
                 $images = $info["imageLinks"] ?? [];
                 $portada = $images["extraLarge"] ?? $images["large"] ?? $images["medium"] ?? $images["thumbnail"] ?? $images["smallThumbnail"] ?? "";
 
@@ -110,7 +116,7 @@ class BookService {
         $ol = $this->curlGet($urlOL);
 
         if ($ol && is_array($ol) && !isset($ol["error"]) && isset($ol["title"])) {
-            
+
             $nombreAutor = "Autor desconocido";
             if (isset($ol["authors"][0]["author"]["key"])) {
                 $authorKey = $ol["authors"][0]["author"]["key"];
@@ -143,23 +149,32 @@ class BookService {
 
         return null;
     }
-    // Hacer petición GET con cURL y decodificar JSON
+
+    // Hacer petición GET con cURL y decodificar JSON (reintenta una vez si falla o da error 5xx)
     private function curlGet($url) {
-        $curl = curl_init();
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1
-        ]);
+        for ($intento = 1; $intento <= 2; $intento++) {
+            $curl = curl_init();
+            curl_setopt_array($curl, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                CURLOPT_SSL_VERIFYPEER => false,   
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1
+            ]);
 
-        $response = curl_exec($curl);
-        curl_close($curl);
+            $response = curl_exec($curl);
+            $codigo = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            curl_close($curl);
 
-        return $response ? json_decode($response, true) : null;
+            $reintentar = ($response === false || $codigo >= 500);
+            if (!$reintentar || $intento === 2) {
+                return $response ? json_decode($response, true) : null;
+            }
+            usleep(400000);
+        }
+        return null;
     }
 }

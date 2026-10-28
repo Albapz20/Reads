@@ -10,9 +10,14 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 $usuario = Auth::usuario();
 if (!$usuario) { header("Location: login.php"); exit; }
 
-/*  Notas agrupadas por estrella entera  */
+// Token para el relleno automático de páginas en segundo plano
+if (empty($_SESSION['csrf_progreso'])) {
+    $_SESSION['csrf_progreso'] = bin2hex(random_bytes(16));
+}
+$csrfPaginas = $_SESSION['csrf_progreso'];
+
 if (!function_exists('grupoNota')) {
-    // Agrupa cualquier nota en su estrella entera: 4, 4.1, 4.35 y 4.99 -> 4 (el 5 es solo 5; menos de 1 cuenta como 1)
+    // Agrupa cualquier nota en su estrella entera: 4, 4.1, 4.35 y 4.99 -> 4
     function grupoNota(float $v): int { return max(1, min(5, (int)floor($v + 0.00001))); }
 }
 
@@ -48,95 +53,8 @@ $yearPrev = (int)$year - 1;
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
 
-// Catálogo manual para resolver títulos difíciles o con etiquetas de Goodreads
-function obtenerPaginasPorCatalogo($tituloOriginal) {
-    $catalogo = [
-        "ever and after"                 => 544,
-        "the wolf king"                  => 496,
-        "una maldición tallada en hueso" => 448,
-        "el príncipe de la noche"        => 440,
-        "instrucción de novicias"        => 288,
-        "caraval"                        => 416,
-        "delito"                         => 480,
-        "icebreaker"                     => 432,
-        "los secretos de heap house"     => 352,
-        "novia"                          => 416,
-        "quicksilver"                    => 512,
-        "nightshade"                     => 432,
-        "calabobos"                      => 160,
-        "metal slinger"                  => 418,
-        "light wielder"                  => 400,
-        "smoke and scar"                 => 420,
-        "la asistenta"                   => 336,
-        "rey de la soberbia"             => 448,
-        "el libro de azrael"             => 576,
-        "la espada de la asesina"        => 432
-    ];
-
-    $tituloLower = mb_strtolower(trim($tituloOriginal), 'UTF-8');
-    foreach ($catalogo as $clave => $pags) {
-        if (mb_strpos($tituloLower, $clave, 0, 'UTF-8') !== false) {
-            return $pags;
-        }
-    }
-    return 0;
-}
-
-// Descarga y decodifica un JSON con timeouts cortos
-if (!function_exists('curlJson')) {
-    function curlJson(string $url): array {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_CONNECTTIMEOUT => 2,
-            CURLOPT_TIMEOUT        => 4,
-            CURLOPT_USERAGENT      => 'ReadsApp/1.0 (contacto@tudominio.com)',
-        ]);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-        return $resp ? (json_decode($resp, true) ?: []) : [];
-    }
-}
-
-// Busca el número de páginas en Google Books y Open Library
-function buscarPaginasOnline(string $titulo, string $autores, string $libroId): int {
-    $tituloLimpio = trim(preg_replace('/\s+/', ' ', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo)));
-    $autor = trim(explode(',', $autores)[0] ?? '');
-    $tl = mb_strtolower($tituloLimpio, 'UTF-8');
-
-    // 1. Google Books por ISBN 
-    if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', $libroId)) {
-        $json = curlJson('https://www.googleapis.com/books/v1/volumes?q=' . urlencode('isbn:' . $libroId));
-        $p = (int)($json['items'][0]['volumeInfo']['pageCount'] ?? 0);
-        if ($p > 30) return $p;
-    }
-
-    // 2. Google Books por título + autor 
-    $q = 'intitle:"' . $tituloLimpio . '"' . ($autor !== '' ? ' inauthor:"' . $autor . '"' : '');
-    $json = curlJson('https://www.googleapis.com/books/v1/volumes?maxResults=5&q=' . urlencode($q));
-    foreach ($json['items'] ?? [] as $item) {
-        $p = (int)($item['volumeInfo']['pageCount'] ?? 0);
-        $t = mb_strtolower($item['volumeInfo']['title'] ?? '', 'UTF-8');
-        if ($t === '') continue;
-        similar_text($tl, $t, $pct);
-        if ($p > 30 && ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t))) return $p;
-    }
-
-    // 3. Open Library 
-    $params = ['title' => $tituloLimpio, 'limit' => 5, 'fields' => 'title,author_name,number_of_pages_median'];
-    if ($autor !== '') $params['author'] = $autor;
-    $json = curlJson('https://openlibrary.org/search.json?' . http_build_query($params));
-    foreach ($json['docs'] ?? [] as $doc) {
-        $p = (int)($doc['number_of_pages_median'] ?? 0);
-        $t = mb_strtolower($doc['title'] ?? '', 'UTF-8');
-        if ($t === '') continue;
-        similar_text($tl, $t, $pct);
-        if ($p > 30 && ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t))) return $p;
-    }
-
-    return 0;
-}
+// Páginas reales de un libro leído.
+$exprPaginas = "COALESCE(NULLIF(CAST(paginas_totales AS SIGNED), 0), NULLIF(CAST(paginas_leidas AS SIGNED), 0), 0)";
 
 // Filtro Top 5
 $periodoTop = $_GET['periodo'] ?? 'anio';
@@ -153,7 +71,7 @@ if ($periodoTop === 'todos') {
 // Obtener libros leídos
 $sqlPaginas = "SELECT id, libro_id, titulo, autores,
                       paginas_totales, paginas_leidas,
-                      GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0)) AS paginas_reales,
+                      {$exprPaginas} AS paginas_reales,
                       portada, estado
                FROM listas_lectura
                WHERE usuario_id = ? AND estado = 'leido' {$whereTop}";
@@ -161,37 +79,24 @@ $stmt = $db->pdo->prepare($sqlPaginas);
 $stmt->execute($paramsTop);
 $todosLosLibrosPeriodo = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Auto-resolver libros con 0 o 300 páginas (catálogo manual y después búsqueda online)
-$maxConsultasOnline = 4;   // límite por carga para no ralentizar la página
-if (!isset($_SESSION['paginas_fallidas'])) $_SESSION['paginas_fallidas'] = [];
-
-foreach ($todosLosLibrosPeriodo as &$l) {
-    $pags = (int)$l['paginas_reales'];
-    if ($pags !== 0 && $pags !== 300) continue;
-
-    $pagsAuto = obtenerPaginasPorCatalogo($l['titulo']);
-
-    if ($pagsAuto === 0 && $maxConsultasOnline > 0 && empty($_SESSION['paginas_fallidas'][$l['id']])) {
-        $maxConsultasOnline--;
-        $pagsAuto = buscarPaginasOnline($l['titulo'], (string)($l['autores'] ?? ''), (string)($l['libro_id'] ?? ''));
-        if ($pagsAuto === 0) $_SESSION['paginas_fallidas'][$l['id']] = true;
-    }
-
-    if ($pagsAuto > 0 && $pagsAuto !== $pags) {
-        $l['paginas_totales'] = $pagsAuto;
-        $l['paginas_leidas']  = $pagsAuto;
-        $l['paginas_reales']  = $pagsAuto;
-
-        $db->pdo->prepare("UPDATE listas_lectura SET paginas_totales = ?, paginas_leidas = ? WHERE id = ?")
-                ->execute([$pagsAuto, $pagsAuto, $l['id']]);
-    }
-}
-unset($l);
+// Solo entran en el ranking los libros que tienen páginas; el resto se avisa debajo
+$librosSinPaginasPeriodo = count(array_filter($todosLosLibrosPeriodo, fn($b) => (int)$b['paginas_reales'] <= 0));
+$conPaginasPeriodo = array_values(array_filter($todosLosLibrosPeriodo, fn($b) => (int)$b['paginas_reales'] > 0));
+$sinPaginasLista = array_values(array_filter($todosLosLibrosPeriodo, fn($b) => (int)$b['paginas_reales'] <= 0));
 
 // Ordenar por mayor número de páginas y extraer el Top 5
-usort($todosLosLibrosPeriodo, fn($a, $b) => (int)$b['paginas_reales'] <=> (int)$a['paginas_reales']);
-$topPaginas = array_slice($todosLosLibrosPeriodo, 0, 5);
+usort($conPaginasPeriodo, fn($a, $b) => (int)$b['paginas_reales'] <=> (int)$a['paginas_reales']);
+$topPaginas = array_slice($conPaginasPeriodo, 0, 5);
 $topValores = array_map(fn($item) => (int)$item['paginas_reales'], $topPaginas);
+
+$stmtFalta = $db->pdo->prepare("SELECT
+        COALESCE(SUM(CASE WHEN {$exprPaginas} = 0 THEN 1 ELSE 0 END), 0) AS sin_paginas,
+        COALESCE(SUM(CASE WHEN paginas_totales = 300 THEN 1 ELSE 0 END), 0) AS con_300
+    FROM listas_lectura WHERE usuario_id = ? AND estado = 'leido'");
+$stmtFalta->execute([$usuario["id"]]);
+$falta = $stmtFalta->fetch(PDO::FETCH_ASSOC) ?: ['sin_paginas' => 0, 'con_300' => 0];
+$sinPaginasN = (int)$falta['sin_paginas'];
+$con300N     = (int)$falta['con_300'];
 
 // Libros leídos por mes
 $stmt = $db->pdo->prepare("SELECT MONTH(fecha_fin) AS mes, COUNT(*) AS total
@@ -226,7 +131,7 @@ $esperados = $objetivo > 0 ? ($objetivo / $diasTotalesAno) * $diaDelAno : 0;
 if ($objetivo <= 0) {
     $mensajeReto = "Fija un reto para seguir tu progreso.";
 } elseif ($leidosEsteAño >= $objetivo) {
-    $mensajeReto = "🎉 ¡Reto completado!";
+    $mensajeReto = "¡Reto completado!";
 } elseif ($leidosEsteAño >= floor($esperados)) {
     $mensajeReto = "Vas bien, te faltan $faltan " . ($faltan === 1 ? "libro" : "libros") . ".";
 } else {
@@ -234,7 +139,7 @@ if ($objetivo <= 0) {
 }
 
 // Tiempo de lectura
-$stmtTiempo = $db->pdo->prepare("SELECT COALESCE(SUM(GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0))), 0) FROM listas_lectura WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?");
+$stmtTiempo = $db->pdo->prepare("SELECT COALESCE(SUM({$exprPaginas}), 0) FROM listas_lectura WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?");
 $stmtTiempo->execute([$usuario["id"], $year]);
 $totalPaginasAño = (int)$stmtTiempo->fetchColumn();
 
@@ -245,7 +150,7 @@ $horasLectura = floor(($totalMinutosLectura % 1440) / 60);
 
 // Comparativa con el año anterior
 $stmtPrev = $db->pdo->prepare("SELECT COUNT(*) AS libros,
-                                      COALESCE(SUM(GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0))), 0) AS paginas
+                                      COALESCE(SUM({$exprPaginas}), 0) AS paginas
                                FROM listas_lectura
                                WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?");
 $stmtPrev->execute([$usuario["id"], $yearPrev]);
@@ -260,19 +165,19 @@ function badgeComparativa(int $actual, int $anterior, int $anioPrev): string {
     }
     $dif = $actual - $anterior;
     if ($dif > 0) {
-        return '<span class="st-delta sube">▲ +' . number_format($dif, 0, '', '.') . ' vs ' . $anioPrev . '</span>';
+        return '<span class="st-delta sube">+' . number_format($dif, 0, '', '.') . ' vs ' . $anioPrev . '</span>';
     }
     if ($dif < 0) {
-        return '<span class="st-delta baja">▼ ' . number_format($dif, 0, '', '.') . ' vs ' . $anioPrev . '</span>';
+        return '<span class="st-delta baja">' . number_format($dif, 0, '', '.') . ' vs ' . $anioPrev . '</span>';
     }
-    return '<span class="st-delta neutro">= igual que en ' . $anioPrev . '</span>';
+    return '<span class="st-delta neutro">Igual que en ' . $anioPrev . '</span>';
 }
 
 // Libros del año (para autores y datos curiosos)
 $librosAnio = [];
 try {
     $stmt = $db->pdo->prepare("SELECT titulo, autores, fecha_inicio, fecha_fin,
-                                      GREATEST(COALESCE(paginas_totales, 0), COALESCE(paginas_leidas, 0)) AS paginas_reales
+                                      {$exprPaginas} AS paginas_reales
                                FROM listas_lectura
                                WHERE usuario_id = ? AND estado = 'leido' AND YEAR(fecha_fin) = ?");
     $stmt->execute([$usuario["id"], $year]);
@@ -334,7 +239,7 @@ try {
     $stmtSync->execute([$usuario["id"]]);
 } catch (Exception $e) {}
 
-// Una sola nota por libro (misma consulta que estadisticas_estrellas.php, sin duplicados)
+// Una sola nota por libro
 try {
     $stmt = $db->pdo->prepare("SELECT COALESCE(
                            (SELECT p.estrellas FROM puntuaciones p
@@ -355,7 +260,7 @@ try {
 }
 
 // Resume una lista de notas: promedio, nota más común y distribución (5, 4, 3, 2, 1)
-// Cada nota va a su estrella entera: 4, 4.1, 4.35 o 4.9 cuentan como 4★
+// Cada nota va a su estrella entera: 4, 4.1, 4.35 o 4.9 cuentan como 4 estrellas
 function resumenEstrellas(array $valores): array {
     $dist = [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0];
     if (empty($valores)) return ['promedio' => 0, 'comun' => 0, 'dist' => $dist, 'total' => 0];
@@ -474,31 +379,27 @@ function urlEstadisticas(array $cambios): string {
 <div class="st-wrap">
 
     <header class="st-header">
-        <h1>📊 Estadísticas de lectura</h1>
+        <h1>Estadísticas de lectura</h1>
         <p>Tu año lector <?= htmlspecialchars($year) ?> de un vistazo</p>
     </header>
 
     <!-- Resumen -->
     <section class="st-kpis">
         <div class="st-kpi">
-            <span class="icono">📚</span>
             <span class="valor"><?= number_format($leidosEsteAño, 0, '', '.') ?></span>
             <span class="etiqueta">Libros en <?= htmlspecialchars($year) ?></span>
             <?= badgeComparativa($leidosEsteAño, $leidosAnioPrev, $yearPrev) ?>
         </div>
         <div class="st-kpi">
-            <span class="icono">📖</span>
             <span class="valor"><?= number_format($totalPaginasAño, 0, '', '.') ?></span>
             <span class="etiqueta">Páginas leídas</span>
             <?= badgeComparativa($totalPaginasAño, $paginasAnioPrev, $yearPrev) ?>
         </div>
         <div class="st-kpi">
-            <span class="icono">⏱️</span>
             <span class="valor"><?= $diasLectura ?>d <?= $horasLectura ?>h</span>
             <span class="etiqueta"><?= number_format($totalMinutosLectura, 0, '', '.') ?> minutos leyendo</span>
         </div>
         <div class="st-kpi">
-            <span class="icono">⭐</span>
             <span class="valor"><?= $notasAnio['promedio'] > 0 ? $notasAnio['promedio'] : '—' ?></span>
             <span class="etiqueta">Nota media <?= htmlspecialchars($year) ?> · total <?= $notasTodos['promedio'] > 0 ? $notasTodos['promedio'] : '—' ?></span>
         </div>
@@ -508,7 +409,7 @@ function urlEstadisticas(array $cambios): string {
 
         <!-- Objetivo anual -->
         <section class="st-card">
-            <div class="st-card-head"><h2>📘 Objetivo anual</h2></div>
+            <div class="st-card-head"><h2>Objetivo anual</h2></div>
             <div class="objetivo-card-wrapper">
                 <div class="grafico-dona-contenedor">
                     <canvas id="objetivoChart"></canvas>
@@ -518,7 +419,7 @@ function urlEstadisticas(array $cambios): string {
                     </div>
                 </div>
                 <p class="objetivo-mensaje"><?= htmlspecialchars($mensajeReto) ?></p>
-                <button class="btn-reto" onclick="toggleFormReto()">🎯 Establecer reto de lectura</button>
+                <button class="btn-reto" onclick="toggleFormReto()">Establecer reto de lectura</button>
                 <div class="form-reto-wrapper" id="formRetoWrapper">
                     <form action="" method="POST">
                         <input type="number" name="nuevo_objetivo" min="1" value="<?= $objetivo ?: 1 ?>" required placeholder="Nº de libros">
@@ -530,23 +431,23 @@ function urlEstadisticas(array $cambios): string {
 
         <!-- Libros por mes -->
         <section class="st-card">
-            <div class="st-card-head"><h2>📅 Libros leídos por mes</h2></div>
+            <div class="st-card-head"><h2>Libros leídos por mes</h2></div>
             <div class="grafico-contenedor"><canvas id="mesesChart"></canvas></div>
         </section>
 
         <!-- Top 5 por páginas -->
         <section class="st-card ancho">
             <div class="st-card-head">
-                <h2>🏆 Top 5 libros por páginas</h2>
+                <h2>Top 5 libros por páginas</h2>
                 <div class="filtro-pestañas">
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'anio'])) ?>" class="filtro-btn <?= $periodoTop === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'todos'])) ?>" class="filtro-btn <?= $periodoTop === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'anio'])) ?>" class="filtro-btn <?= $periodoTop === 'anio' ? 'activo' : 'inactivo' ?>"><?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['periodo' => 'todos'])) ?>" class="filtro-btn <?= $periodoTop === 'todos' ? 'activo' : 'inactivo' ?>">Todos</a>
                 </div>
             </div>
 
             <div class="ranking-lista">
                 <?php if (empty($topPaginas)): ?>
-                    <p class="vacio">No hay libros leídos registrados en este período.</p>
+                    <p class="vacio">No hay libros leídos con páginas registradas en este período.</p>
                 <?php else:
                     $maxPaginas = (!empty($topValores) && max($topValores) > 0) ? max($topValores) : 1;
                     foreach ($topPaginas as $index => $t):
@@ -557,7 +458,6 @@ function urlEstadisticas(array $cambios): string {
                 ?>
                     <div class="ranking-card pos-<?= $posicion ?>">
                         <div class="ranking-portada-box">
-                            <span aria-hidden="true">📖</span>
                             <img src="<?= htmlspecialchars($t['portada'] ?: 'img/sin_portada.png') ?>" alt="Portada de <?= htmlspecialchars($t['titulo']) ?>"
                                  class="ranking-portada" loading="lazy" onerror="this.style.display='none'">
                             <span class="ranking-badge">#<?= $posicion ?></span>
@@ -565,7 +465,7 @@ function urlEstadisticas(array $cambios): string {
                         <div class="ranking-detalles">
                             <div class="ranking-top-info">
                                 <strong class="ranking-titulo"><?= htmlspecialchars($t['titulo']) ?></strong>
-                                <span class="ranking-paginas-tag"><?= $paginasLibro > 0 ? number_format($paginasLibro, 0, '', '.') . ' pág.' : 'Sin especificar' ?></span>
+                                <span class="ranking-paginas-tag"><?= number_format($paginasLibro, 0, '', '.') ?> pág.</span>
                             </div>
                             <div class="ranking-barra-wrapper"><div class="ranking-barra-fill" style="width: <?= $porcentaje ?>%;"></div></div>
                             <a href="libro.php?id=<?= urlencode((string)$idLink) ?>" class="ranking-link">Ver detalles →</a>
@@ -573,15 +473,35 @@ function urlEstadisticas(array $cambios): string {
                     </div>
                 <?php endforeach; endif; ?>
             </div>
+
+            <?php if ($librosSinPaginasPeriodo > 0): ?>
+                <p class="mapa-pie"><?= (int)$librosSinPaginasPeriodo ?> <?= $librosSinPaginasPeriodo === 1 ? 'libro leído no tiene' : 'libros leídos no tienen' ?> páginas registradas y no entra<?= $librosSinPaginasPeriodo === 1 ? '' : 'n' ?> en el ranking.</p>
+                <details class="mapa-pie">
+                    <summary>Ver cuáles son</summary>
+                    <ul style="margin:8px 0 0 18px; padding:0;">
+                        <?php foreach ($sinPaginasLista as $sp):
+                            $idSp = ($sp['libro_id'] ?? '') !== '' ? $sp['libro_id'] : $sp['id']; ?>
+                            <li><a href="libro.php?id=<?= urlencode((string)$idSp) ?>"><?= htmlspecialchars($sp['titulo']) ?></a></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </details>
+            <?php endif; ?>
+            <p class="mapa-pie" id="estadoPaginas" hidden></p>
+            <?php if ($con300N > 0): ?>
+                <p class="mapa-pie">
+                    <?= (int)$con300N ?> <?= $con300N === 1 ? 'libro tiene' : 'libros tienen' ?> exactamente 300 páginas (a veces es un valor por defecto de las importaciones).
+                    <button type="button" id="btnRevisar300" class="filtro-btn inactivo">Revisar con datos exactos</button>
+                </p>
+            <?php endif; ?>
         </section>
 
         <!-- Estrellas -->
         <section class="st-card">
             <div class="st-card-head">
-                <h2>⭐ Distribución por estrellas</h2>
+                <h2>Distribución por estrellas</h2>
                 <div class="filtro-pestañas">
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'anio'])) ?>" class="filtro-btn <?= $periodoNotas === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'todos'])) ?>" class="filtro-btn <?= $periodoNotas === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'anio'])) ?>" class="filtro-btn <?= $periodoNotas === 'anio' ? 'activo' : 'inactivo' ?>"><?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['notas' => 'todos'])) ?>" class="filtro-btn <?= $periodoNotas === 'todos' ? 'activo' : 'inactivo' ?>">Todos</a>
                 </div>
             </div>
 
@@ -613,7 +533,7 @@ function urlEstadisticas(array $cambios): string {
 
         <!-- Autores más leídos -->
         <section class="st-card">
-            <div class="st-card-head"><h2>✍️ Autores más leídos <?= htmlspecialchars($year) ?></h2></div>
+            <div class="st-card-head"><h2>Autores más leídos <?= htmlspecialchars($year) ?></h2></div>
             <?php if (empty($topAutores)): ?>
                 <p class="vacio">Aún no hay autores registrados este año.</p>
             <?php else: ?>
@@ -634,17 +554,17 @@ function urlEstadisticas(array $cambios): string {
         <!-- Mapa de géneros -->
         <section class="st-card ancho">
             <div class="st-card-head">
-                <h2>🗺️ Mapa de géneros</h2>
+                <h2>Mapa de géneros</h2>
                 <div class="filtro-pestañas">
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'anio'])) ?>" class="filtro-btn <?= $periodoGeneros === 'anio' ? 'activo' : 'inactivo' ?>">📅 <?= htmlspecialchars($year) ?></a>
-                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'todos'])) ?>" class="filtro-btn <?= $periodoGeneros === 'todos' ? 'activo' : 'inactivo' ?>">🌍 Todos</a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'anio'])) ?>" class="filtro-btn <?= $periodoGeneros === 'anio' ? 'activo' : 'inactivo' ?>"><?= htmlspecialchars($year) ?></a>
+                    <a href="<?= htmlspecialchars(urlEstadisticas(['generos' => 'todos'])) ?>" class="filtro-btn <?= $periodoGeneros === 'todos' ? 'activo' : 'inactivo' ?>">Todos</a>
                 </div>
             </div>
 
             <?php if ($colGeneros === null): ?>
                 <p class="vacio">No se ha podido preparar el almacenamiento de géneros en la base de datos.</p>
             <?php elseif (empty($mapaGeneros)): ?>
-                <p class="vacio">Todavía no hay géneros para este período. <a href="rellenar_generos.php">🏷️ Completar géneros de mis libros</a></p>
+                <p class="vacio">Todavía no hay géneros para este período. <a href="rellenar_generos.php">Completar géneros de mis libros</a></p>
             <?php else: ?>
                 <div class="mapa-generos" id="mapaGeneros">
                     <div class="mg-burbujas" role="img" aria-label="Burbujas de géneros literarios: cuanto más grande, más libros"></div>
@@ -661,43 +581,37 @@ function urlEstadisticas(array $cambios): string {
 
         <!-- Datos curiosos -->
         <section class="st-card ancho">
-            <div class="st-card-head"><h2>💡 Datos curiosos de <?= htmlspecialchars($year) ?></h2></div>
+            <div class="st-card-head"><h2>Datos curiosos de <?= htmlspecialchars($year) ?></h2></div>
             <?php if ($leidosEsteAño === 0): ?>
                 <p class="vacio">Termina tu primer libro del año para ver tus datos curiosos.</p>
             <?php else: ?>
                 <div class="curiosos-grid">
                     <div class="curioso">
-                        <span class="c-icono">🐘</span>
                         <span class="c-etiqueta">Libro más largo</span>
                         <span class="c-valor"><?= $libroLargo ? number_format((int)$libroLargo['paginas_reales'], 0, '', '.') . ' pág.' : '—' ?></span>
                         <span class="c-detalle"><?= $libroLargo ? htmlspecialchars($libroLargo['titulo']) : 'Sin datos' ?></span>
                     </div>
                     <div class="curioso">
-                        <span class="c-icono">🐜</span>
                         <span class="c-etiqueta">Libro más corto</span>
                         <span class="c-valor"><?= $libroCorto ? number_format((int)$libroCorto['paginas_reales'], 0, '', '.') . ' pág.' : '—' ?></span>
                         <span class="c-detalle"><?= $libroCorto ? htmlspecialchars($libroCorto['titulo']) : 'Sin datos' ?></span>
                     </div>
                     <div class="curioso">
-                        <span class="c-icono">📏</span>
                         <span class="c-etiqueta">Media por libro</span>
                         <span class="c-valor"><?= $mediaPaginasLibro > 0 ? number_format($mediaPaginasLibro, 0, '', '.') . ' pág.' : '—' ?></span>
                         <span class="c-detalle">Páginas por libro leído</span>
                     </div>
                     <div class="curioso">
-                        <span class="c-icono">🏅</span>
                         <span class="c-etiqueta">Mejor mes</span>
                         <span class="c-valor"><?= $mejorMes ? htmlspecialchars($mejorMes) : '—' ?></span>
                         <span class="c-detalle"><?= $maxMes > 0 ? $maxMes . ($maxMes === 1 ? ' libro terminado' : ' libros terminados') : 'Sin datos' ?></span>
                     </div>
                     <div class="curioso">
-                        <span class="c-icono">⏳</span>
                         <span class="c-etiqueta">Tiempo por libro</span>
                         <span class="c-valor"><?= $diasMediosLibro > 0 ? $diasMediosLibro . ($diasMediosLibro === 1 ? ' día' : ' días') : '—' ?></span>
                         <span class="c-detalle">De media, de inicio a fin</span>
                     </div>
                     <div class="curioso">
-                        <span class="c-icono">🔥</span>
                         <span class="c-etiqueta">Ritmo diario</span>
                         <span class="c-valor"><?= $paginasPorDia > 0 ? str_replace('.', ',', (string)$paginasPorDia) . ' pág.' : '—' ?></span>
                         <span class="c-detalle">Por día en lo que va de año</span>
@@ -712,12 +626,10 @@ function urlEstadisticas(array $cambios): string {
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-
         <a href="index.php" class="nav-card-float">
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
-
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
@@ -734,12 +646,14 @@ function urlEstadisticas(array $cambios): string {
             <span class="nav-icon">📅</span>
             <span>Calendario</span>
         </a>
-
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
-
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
         <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
@@ -823,7 +737,8 @@ new Chart(ctxMeses, {
         }
     }
 });
-// Mapa de géneros 
+
+// Mapa de géneros
 (function () {
     const caja = document.getElementById("mapaGeneros");
     if (!caja) return;
@@ -870,7 +785,7 @@ new Chart(ctxMeses, {
         ranking.querySelectorAll('[data-i="' + i + '"]').forEach(e => e.classList.toggle("resalta", on));
     }
 
-    // Ranking 
+    // Ranking
     function pintarRanking() {
         ranking.textContent = "";
         const maxN = Math.max.apply(null, datos.map(d => d.n));
@@ -969,7 +884,7 @@ new Chart(ctxMeses, {
             procesados += j.procesados;
             if (estado && j.procesados > 0) {
                 estado.hidden = false;
-                estado.textContent = "🔎 Detectando géneros… quedan " + j.pendientes + " libros";
+                estado.textContent = "Detectando géneros… quedan " + j.pendientes + " libros";
             }
             if (!j.pendientes || !j.procesados) break;
         }
@@ -977,6 +892,67 @@ new Chart(ctxMeses, {
     if (procesados > 0) location.reload();
 })();
 <?php endif; ?>
+
+// Páginas de los libros leídos: se completan solas en segundo plano 
+const CSRF_PAGINAS = <?= json_encode($csrfPaginas) ?>;
+let buscandoPaginas = false;
+
+async function completarPaginas(incluir300) {
+    if (buscandoPaginas) return;
+    buscandoPaginas = true;
+
+    const estado = document.getElementById("estadoPaginas");
+    let actualizados = 0, vueltas = 0, intentados = 0, aviso = '', fallo = '';
+    try {
+        // Máximo 10 llamadas (20 libros) por visita, para cuidar la cuota diaria de Google
+        for (; vueltas < 10; vueltas++) {
+            const fd = new FormData();
+            fd.append("csrf", CSRF_PAGINAS);
+            if (incluir300) fd.append("incluir300", "1");
+            const r = await fetch("rellenar_paginas.php", { method: "POST", body: fd, credentials: "same-origin" });
+            if (!r.ok) { fallo = 'El servidor respondió con error ' + r.status + ' (revisa rellenar_paginas.php).'; break; }
+            const j = await r.json();
+            if (!j.ok) { fallo = j.error || 'Respuesta no válida.'; break; }
+
+            actualizados += j.actualizados;
+            intentados += j.procesados;
+            if (j.aviso) aviso = j.aviso;
+            if (estado && j.procesados > 0) {
+                estado.hidden = false;
+                estado.textContent = "Buscando las páginas de tus libros… quedan " + j.pendientes;
+            }
+            if (!j.pendientes || !j.procesados) break;
+            await new Promise(r => setTimeout(r, 1500));   // pausa para no agotar el límite por minuto de Google
+        }
+    } catch (e) {
+        fallo = 'Respuesta no válida del servidor: probablemente un aviso o error de PHP en rellenar_paginas.php o PaginasService.php.';
+    }
+
+    buscandoPaginas = false;
+    if (actualizados > 0) {
+        location.reload();
+    } else if (estado && fallo) {
+        estado.hidden = false;
+        estado.textContent = "No se pudieron buscar las páginas: " + fallo;
+    } else if (estado) {
+        if (incluir300) {
+            estado.hidden = false;
+            estado.textContent = "Revisión terminada: no hay datos exactos distintos de 300 páginas.";
+        } else if (intentados > 0) {
+            estado.hidden = false;
+            estado.textContent = "No se han encontrado las páginas de " + intentados + " libros ahora mismo." + (aviso ? " " + aviso : "");
+        } else {
+            estado.hidden = true;
+        }
+    }
+}
+
+<?php if ($sinPaginasN > 0): ?>
+completarPaginas(false);
+<?php endif; ?>
+
+const btnRevisar300 = document.getElementById("btnRevisar300");
+if (btnRevisar300) btnRevisar300.addEventListener("click", () => completarPaginas(true));
 </script>
 
 </body>

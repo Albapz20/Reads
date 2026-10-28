@@ -1,5 +1,4 @@
 <?php
-
 require_once "../src/Auth.php";
 require_once "../src/Database.php";
 require_once "../src/UserService.php";
@@ -11,10 +10,10 @@ if (!$usuario) { header("Location: login.php"); exit; }
 if (session_status() === PHP_SESSION_NONE) session_start();
 
 @set_time_limit(120);
-const LOTE = 3;                                        
+const LOTE = 3;                                        // libros que se revisan por tanda
 const PORTADA_DEFECTO = '/Reads/img/default_cover.jpg';
-const DIF_MISMA = 12;                                  
-const DIF_MUY_DISTINTA = 26;                           
+const DIF_MISMA = 12;                                  // diferencia de imagen (0-64) hasta la que es la misma portada
+const DIF_MUY_DISTINTA = 26;                           // a partir de aquí se propone cambiarla por defecto
 
 $db  = new Database();
 $uid = (int)$usuario['id'];
@@ -164,6 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'aplic
         $cambiadas++;
     }
 
+    // Marcadas a ojo (sin referencia): se quitan
     foreach (array_keys($_POST['quitar_sinref'] ?? []) as $id) {
         $id = (int)$id;
         if (!isset($sinref[$id])) continue;
@@ -214,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'poner
 }
 
 $paso = $_GET['paso'] ?? '';
-$refresco = '';       
+$refresco = '';          // URL a la que la página avanza sola
 $diag = null;
 
 /*  Analizar por tandas  */
@@ -343,6 +343,7 @@ $msg = '';
 $pendientes = [];
 $libroElegir = null;
 $cands = [];
+$isbnManual = trim((string)($_GET['isbn'] ?? ''));
 if ($paso === 'pendientes' || $paso === 'elegir') {
     $msg = (string)($_SESSION['rev_mensaje'] ?? '');
     $_SESSION['rev_mensaje'] = '';
@@ -361,11 +362,14 @@ if ($paso === 'elegir') {
     $libroElegir = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($libroElegir) {
         $cands = PortadasVerificadas::candidatos((string)$libroElegir['titulo'], (string)($libroElegir['autores'] ?? ''));
+        if ($isbnManual !== '') {   // las del ISBN que has escrito van primero
+            $cands = array_merge(PortadasVerificadas::portadasPorIsbn($isbnManual), $cands);
+        }
         $_SESSION['rev_cands'][$idE] = $cands;
     }
 }
 
-/* Datos para las vistas  */
+/*  Datos para las vistas  */
 $propuestas = $_SESSION['rev_portadas'] ?? [];
 $sinref     = $_SESSION['rev_sinref'] ?? [];
 $stats      = $_SESSION['rev_stats'] ?? ['ok' => 0, 'limite' => 0, 'motivos' => []];
@@ -397,33 +401,6 @@ $etiquetas = [
 <link rel="stylesheet" href="/Reads/temas/<?= h($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= @filemtime(__DIR__ . '/css/styles.css') ?>">
 <?php if ($refresco !== ''): ?><meta http-equiv="refresh" content="1;url=<?= h($refresco) ?>"><?php endif; ?>
-<style>
-    .rp-wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 90px; }
-    .rp-card { background: var(--bg-card, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 16px; padding: 22px; margin-bottom: 16px; }
-    .rp-btn { display: inline-block; padding: 11px 22px; border-radius: 12px; background: var(--primary-color, #d87d8a); color: var(--primary-contrast, #fff); text-decoration: none; font-weight: 700; border: none; cursor: pointer; font-size: 1rem; }
-    .rp-btn.sec { background: var(--bg-chip, #eee); color: var(--text-color, #333); border: 1px solid var(--border-color, #ccc); }
-    .rp-bar { height: 12px; border-radius: 12px; background: var(--tint, rgba(0,0,0,.08)); overflow: hidden; margin: 14px 0; }
-    .rp-bar > div { height: 100%; background: var(--primary-color, #d87d8a); }
-    .rp-aviso { padding: 12px 14px; border-radius: 12px; background: var(--primary-soft, rgba(128,128,128,.15)); margin-bottom: 14px; }
-    .rp-fila { display: grid; grid-template-columns: 110px 110px 1fr; gap: 16px; align-items: start; }
-    .rp-img { text-align: center; font-size: .72rem; opacity: .85; }
-    .rp-img img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; background: var(--bg-chip, #eee); box-shadow: 0 3px 8px rgba(0,0,0,.2); display: block; margin-bottom: 4px; }
-    .rp-vacia { width: 100%; aspect-ratio: 2/3; border-radius: 8px; border: 2px dashed var(--border-color, #ccc); display: flex; align-items: center; justify-content: center; padding: 6px; box-sizing: border-box; margin-bottom: 4px; }
-    .rp-info h3 { margin: 0 0 2px; font-size: 1.05rem; }
-    .rp-info p { margin: 0 0 6px; font-size: .85rem; opacity: .85; }
-    .rp-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--tint, rgba(0,0,0,.08)); margin-bottom: 8px; }
-    .rp-info select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); font: inherit; font-size: .9rem; max-width: 100%; }
-    .rp-motivos { margin: 10px 0 0; padding-left: 20px; font-size: .88rem; }
-    .rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; margin-top: 14px; }
-    .rp-tile { display: block; cursor: pointer; font-size: .75rem; }
-    .rp-tile img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; background: var(--bg-chip, #eee); box-shadow: 0 3px 8px rgba(0,0,0,.2); display: block; margin-bottom: 6px; }
-    .rp-tile .t { display: block; font-weight: 700; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .rp-tile .a { display: block; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rp-tile .c { display: block; margin-top: 4px; font-weight: 700; color: var(--danger, #c0392b); }
-    .rp-sticky { position: sticky; bottom: 14px; text-align: center; padding: 10px; }
-    .rp-pre { white-space: pre-wrap; word-break: break-word; font-size: .8rem; background: var(--bg-chip, #eee); padding: 12px; border-radius: 10px; }
-    @media (max-width: 620px) { .rp-fila { grid-template-columns: 90px 90px 1fr; gap: 10px; } }
-</style>
 </head>
 <body class="page-revisar">
 <div class="rp-wrap">
@@ -480,6 +457,13 @@ $etiquetas = [
 
         <div class="rp-card">
             <h3>Portadas que he encontrado (<?= count($cands) ?>)</h3>
+            <form method="GET" style="margin:8px 0 14px">
+                <input type="hidden" name="paso" value="elegir">
+                <input type="hidden" name="id" value="<?= (int)$libroElegir['id'] ?>">
+                <label style="font-size:.85rem; opacity:.8">¿Tienes el ISBN? Lo verás en la ficha del libro en Casa del Libro o Amazon. Con él pido la imagen directamente (sin límite de Google).</label><br>
+                <input type="text" name="isbn" value="<?= h($isbnManual) ?>" placeholder="978…" style="padding:8px; width:220px">
+                <button type="submit">Buscar por ISBN</button>
+            </form>
             <?php if (empty($cands)): ?>
                 <p>No he encontrado ninguna portada de ese autor en Open Library, Apple ni Google. Usa una de las dos opciones de abajo.</p>
             <?php else: ?>

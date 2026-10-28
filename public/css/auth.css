@@ -1,0 +1,140 @@
+/* Estilos compartidos de registro.php y login.php (no dependen de .registro-box ni de .login-box) */
+body.page-register,
+body.page-login {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 100vh;
+    background: #fff5f9 !important;
+}
+
+.rg-page {
+    --rg-primary: var(--primary-color, #d14d7c);
+    --rg-texto: #4a3340;
+    --rg-borde: #ffd3e4;
+
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+    box-sizing: border-box;
+    font-family: inherit;
+    color: var(--rg-texto);
+}
+.rg-page *, .rg-page *::before, .rg-page *::after { box-sizing: border-box; }
+
+.rg-card {
+    width: 100%;
+    max-width: 940px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(209, 77, 124, .18), 0 4px 14px rgba(0, 0, 0, .05);
+}
+
+/* ---------- Panel de presentación ---------- */
+
+.rg-pitch {
+    position: relative;
+    padding: 44px 38px;
+    color: #fff;
+    background: linear-gradient(150deg, var(--rg-primary) 0%, #ff9ec4 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 22px;
+    overflow: hidden;
+}
+.rg-pitch::before, .rg-pitch::after {
+    content: ""; position: absolute; border-radius: 50%; background: rgba(255, 255, 255, .13);
+}
+.rg-pitch::before { width: 220px; height: 220px; right: -70px; top: -70px; }
+.rg-pitch::after  { width: 160px; height: 160px; left: -50px; bottom: -50px; }
+.rg-pitch > * { position: relative; z-index: 1; }
+
+.rg-logo { font-size: 2.05rem; font-weight: 800; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; color:#effaf3 }
+.rg-logo span { font-size: 1.5rem; }
+.rg-pitch h2 { margin: 0; font-size: 1.45rem; line-height: 1.2; color: #fff; }
+.rg-pitch > p { margin: 0; opacity: .92; line-height: 1.5; }
+
+.rg-ventajas { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.rg-ventajas li { display: flex; gap: 12px; align-items: flex-start; font-size: .95rem; line-height: 1.35; }
+.rg-ventajas .ico {
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: 12px;
+    background: rgba(255, 255, 255, .22); display: grid; place-items: center; font-size: 1.1rem;
+}
+.rg-ventajas strong { display: block; }
+.rg-ventajas small { opacity: .88; font-size: .82rem; }
+
+/* ---------- Formulario ---------- */
+.rg-form-wrap { padding: 44px 40px; display: flex; flex-direction: column; justify-content: center; }
+.rg-form-wrap h1 { margin: 0 0 6px; font-size: 1.7rem; color: var(--rg-texto); }
+.rg-sub { margin: 0 0 22px; font-size: .92rem; opacity: .7; }
+
+.rg-error {
+    margin: 0 0 16px; padding: 11px 14px; border-radius: 12px;
+    background: #fff0f0; border: 1px solid #f5c2c2; color: #b02a37; font-size: .9rem; font-weight: 600;
+}
+
+.rg-campo { position: relative; margin-bottom: 14px; }
+.rg-campo .ico {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    font-size: 1rem; opacity: .75; pointer-events: none;
+}
+.rg-input {
+    width: 100%; height: 50px; padding: 0 46px 0 44px;
+    font: inherit; font-size: .95rem; color: var(--rg-texto);
+    background: #fff; border: 1.5px solid var(--rg-borde); border-radius: 14px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+.rg-input::placeholder { color: #a9929c; }
+.rg-input:focus { border-color: var(--rg-primary); box-shadow: 0 0 0 4px rgba(209, 77, 124, .14); }
+.rg-input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #fff inset;
+    -webkit-text-fill-color: var(--rg-texto);
+}
+
+.rg-ojo {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent;
+    cursor: pointer; font-size: 1.05rem; opacity: .7;
+}
+.rg-ojo:hover { background: rgba(209, 77, 124, .1); opacity: 1; }
+
+.rg-fuerza { height: 5px; border-radius: 5px; background: #f3e3ea; overflow: hidden; margin: -4px 0 4px; }
+.rg-fuerza i { display: block; height: 100%; width: 0; border-radius: 5px; transition: width .2s, background .2s; }
+.rg-fuerza-texto { font-size: .76rem; opacity: .7; min-height: 1.1em; margin-bottom: 14px; }
+
+.rg-boton {
+    width: 100%; height: 52px; border: 0; border-radius: 14px; cursor: pointer;
+    font: inherit; font-size: 1rem; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, var(--rg-primary), #e36b97);
+    box-shadow: 0 8px 20px rgba(209, 77, 124, .32);
+    transition: transform .12s, box-shadow .12s;
+}
+.rg-boton:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(209, 77, 124, .38); }
+.rg-boton:active { transform: translateY(0); }
+
+.rg-login { margin: 20px 0 0; text-align: center; font-size: .92rem; }
+.rg-login a { color: var(--rg-primary); font-weight: 800; text-decoration: none; }
+.rg-login a:hover { text-decoration: underline; }
+
+/* ---------- Móvil ---------- */
+@media (max-width: 780px) {
+    .rg-card { grid-template-columns: 1fr; max-width: 460px; border-radius: 24px; }
+    .rg-pitch { padding: 26px 26px 24px; gap: 10px; }
+    .rg-pitch h2 { font-size: 1.35rem; }
+    .rg-pitch > p, .rg-ventajas { display: none; }
+    .rg-form-wrap { padding: 28px 24px 30px; }
+}
+
+/* ---------- Extras del login ---------- */
+.rg-ok {
+    margin: 0 0 16px; padding: 11px 14px; border-radius: 12px;
+    background: #effaf3; border: 1px solid #bfe5cd; color: #1f7a45; font-size: .9rem; font-weight: 600;
+}
+.rg-olvido { display: block; text-align: right; margin: -4px 2px 18px; font-size: .84rem; }
+.rg-olvido a { color: var(--rg-primary); font-weight: 700; text-decoration: none; }
+.rg-olvido a:hover { text-decoration: underline; }

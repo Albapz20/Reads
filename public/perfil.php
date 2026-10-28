@@ -5,12 +5,15 @@ require_once "../src/ListaService.php";
 require_once "../src/AjustesService.php";
 require_once "../src/Database.php";
 require_once "../src/ReviewService.php";
+require_once "../src/AvatarHelper.php";
 
 $usuario = Auth::usuario();
 if (!$usuario) {
     header("Location: login.php");
     exit;
 }
+if (session_status() === PHP_SESSION_NONE) @session_start();
+
 $userService    = new UserService();
 $listaService   = new ListaService();
 $ajustesService = new AjustesService();
@@ -21,6 +24,56 @@ $tema = strtolower(trim($tema));
 $ajustes = $ajustesService->obtenerAjustes($usuario["id"]);
 
 $db = new Database();
+
+// Imagen de perfil: subir una foto, elegir un icono o volver a la inicial
+$avatarMsg = $_SESSION['avatar_msg'] ?? null;
+unset($_SESSION['avatar_msg']);
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["avatar_accion"])) {
+    $msg = ['tipo' => 'error', 'texto' => 'No se pudo actualizar la imagen.'];
+
+    if (!AvatarHelper::verificarToken((string)($_POST['csrf'] ?? ''))) {
+        $msg['texto'] = 'La sesión ha caducado. Recarga la página e inténtalo de nuevo.';
+    } else {
+        $stAv = $db->pdo->prepare("SELECT avatar FROM usuarios WHERE id = ?");
+        $stAv->execute([$usuario["id"]]);
+        $anterior = $stAv->fetchColumn() ?: null;
+
+        $accion = (string)$_POST["avatar_accion"];
+        $nuevo = false;   // false = sin cambios
+
+        if ($accion === 'subir') {
+            $r = AvatarHelper::guardarImagen($_FILES['foto'] ?? [], (int)$usuario["id"]);
+            if ($r['ok']) $nuevo = $r['valor'];
+            else $msg['texto'] = $r['error'];
+        } elseif ($accion === 'emoji') {
+            $e = (string)($_POST['emoji'] ?? '');
+            if (AvatarHelper::esEmojiValido($e)) $nuevo = 'emoji:' . $e;
+            else $msg['texto'] = 'Icono no válido.';
+        } elseif ($accion === 'quitar') {
+            $nuevo = null;
+        }
+
+        if ($nuevo !== false) {
+            $db->pdo->prepare("UPDATE usuarios SET avatar = ? WHERE id = ?")->execute([$nuevo, $usuario["id"]]);
+            if ($nuevo !== $anterior) AvatarHelper::borrarImagen($anterior);   // libera la foto anterior
+            $msg = ['tipo' => 'ok', 'texto' => $accion === 'quitar'
+                ? 'Hemos vuelto a usar tu inicial como imagen.'
+                : 'Imagen de perfil actualizada.'];
+        }
+    }
+
+    $_SESSION['avatar_msg'] = $msg;
+    header("Location: perfil.php");
+    exit;
+}
+
+$stAv = $db->pdo->prepare("SELECT avatar FROM usuarios WHERE id = ?");
+$stAv->execute([$usuario["id"]]);
+$avatarActual = $stAv->fetchColumn() ?: null;
+$avatarInfo   = AvatarHelper::interpretar($avatarActual);
+$csrfAvatar   = AvatarHelper::token();
+$gradienteBanda = AvatarHelper::gradienteTema($tema);
 
 // Guardar valoraciones desde el perfil: se escribe en listas_lectura Y en puntuaciones
 // (libro.php y la biblioteca leen de puntuaciones, así que ambas deben quedar iguales)
@@ -390,6 +443,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/comunidad.css?v=<?= @filemtime(__DIR__ . '/css/comunidad.css') ?>">
     <script src="/Reads/public/main.js"></script>
     <title>Mi perfil</title>
 
@@ -398,11 +452,20 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 
 <div class="container">
 
+    <?php if ($avatarMsg): ?>
+        <div class="perfil-card avatar-aviso <?= $avatarMsg['tipo'] === 'error' ? 'error' : '' ?>">
+            <?= $avatarMsg['tipo'] === 'ok' ? '✅' : '⚠️' ?> <?= htmlspecialchars($avatarMsg['texto']) ?>
+        </div>
+    <?php endif; ?>
+
     <!-- Banner de perfil -->
-    <div class="perfil-card perfil-banner-container">
+    <div class="perfil-card perfil-banner-container con-banda">
+        <div class="pf-banner" style="background: <?= htmlspecialchars($gradienteBanda) ?>;"></div>
+
         <div class="perfil-header-main">
-            <div class="avatar-circle">
-                <?= strtoupper(substr($datos["nombre"] ?? 'A', 0, 1)) ?>
+            <div class="avatar-circle avatar-editable">
+                <?= AvatarHelper::contenidoCirculo($datos["nombre"] ?? 'A', $avatarActual) ?>
+                <button type="button" class="avatar-editar" id="abrirAvatar" aria-label="Cambiar imagen de perfil" title="Cambiar imagen de perfil">📷</button>
             </div>
 
             <div class="perfil-info-main">
@@ -466,9 +529,60 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <div class="modal-cuerpo" id="modalCuerpo"></div>
 </dialog>
 
+<!-- Modal: cambiar imagen de perfil -->
+<dialog id="modalAvatar" class="modal-libro" aria-label="Cambiar imagen de perfil">
+    <button type="button" class="modal-cerrar" id="cerrarAvatar" aria-label="Cerrar">✕</button>
+    <div class="modal-cuerpo">
+        <div class="av-modal">
+            <h3>📷 Imagen de perfil</h3>
+            <p class="av-sub">Sube una foto o elige un icono. Se verá en tu perfil y en la comunidad.</p>
+
+            <div class="av-seccion">
+                <h4>Subir una foto</h4>
+                <form method="POST" enctype="multipart/form-data" id="formFoto">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfAvatar) ?>">
+                    <input type="hidden" name="avatar_accion" value="subir">
+                    <div class="av-subir">
+                        <img id="avPreview" class="av-preview" alt="Vista previa">
+                        <input type="file" name="foto" id="inputFoto" accept="image/jpeg,image/png,image/webp">
+                        <button type="submit" class="btn-accion" id="btnSubirFoto" disabled>Usar esta foto</button>
+                    </div>
+                    <p class="av-error" id="avError"></p>
+                    <p class="av-sub" style="margin:6px 0 0;">JPG, PNG o WebP · máximo 2 MB · se recorta en cuadrado</p>
+                </form>
+            </div>
+
+            <div class="av-seccion">
+                <h4>O elige un icono</h4>
+                <form method="POST">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfAvatar) ?>">
+                    <input type="hidden" name="avatar_accion" value="emoji">
+                    <div class="av-emojis">
+                        <?php foreach (AvatarHelper::EMOJIS as $em): ?>
+                            <button type="submit" name="emoji" value="<?= htmlspecialchars($em) ?>"
+                                    class="av-emoji <?= ($avatarInfo['tipo'] === 'emoji' && $avatarInfo['valor'] === $em) ? 'actual' : '' ?>"
+                                    aria-label="Usar el icono <?= htmlspecialchars($em) ?>"><?= htmlspecialchars($em) ?></button>
+                        <?php endforeach; ?>
+                    </div>
+                </form>
+            </div>
+
+            <?php if ($avatarInfo['tipo'] !== 'letra'): ?>
+            <div class="av-seccion">
+                <form method="POST">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfAvatar) ?>">
+                    <input type="hidden" name="avatar_accion" value="quitar">
+                    <button type="submit" class="btn-accion btn-eliminar">Quitar y usar mi inicial</button>
+                </form>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</dialog>
+
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
-   <nav class="quick-nav-floating">
+    <nav class="quick-nav-floating">
 
         <a href="index.php" class="nav-card-float">
             <span class="nav-icon">🏠</span>
@@ -479,30 +593,39 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>
+
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
         </a>
+
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        
+        </a>
+
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
+            <span>Calendario</span>
         </a>
-        
+
         <a href="buscar.php" class="nav-card-float">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
 
-          <a href="ajustes.php" class="nav-card-float">
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
+
+        <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
     </nav>
 </div>
+
 
 <script>
 const LIBROS_POR_PAGINA = 24;
@@ -510,7 +633,7 @@ const PESTANAS = ['tbr', 'leyendo', 'leidos', 'abandonados', 'guardados'];
 
 const normaliza = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-/* ---------- Pestañas ---------- */
+/*  Pestañas  */
 function abrirPestana(nombre) {
     if (!PESTANAS.includes(nombre)) nombre = 'tbr';
 
@@ -527,7 +650,7 @@ document.querySelectorAll('[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => abrirPestana(btn.dataset.tab));
 });
 
-/* ---------- Búsqueda, orden y "mostrar más" ---------- */
+/*  Búsqueda, orden y "mostrar más"  */
 function refrescarPanel(panel, reiniciar) {
     const grid = panel.querySelector('.libros-grid');
     if (!grid) return;
@@ -579,7 +702,7 @@ document.querySelectorAll('.tab-content').forEach(panel => {
     refrescarPanel(panel, true);
 });
 
-/* ---------- Modal de gestión ---------- */
+/*  Modal de gestión  */
 const modal = document.getElementById('modalLibro');
 const modalCuerpo = document.getElementById('modalCuerpo');
 
@@ -612,7 +735,43 @@ modal.addEventListener('close', () => {
     document.body.classList.remove('modal-open');
 });
 
-/* ---------- Utilidades ---------- */
+/*  Imagen de perfil  */
+const modalAvatar = document.getElementById('modalAvatar');
+document.getElementById('abrirAvatar').addEventListener('click', () => {
+    modalAvatar.showModal();
+    document.body.classList.add('modal-open');
+});
+document.getElementById('cerrarAvatar').addEventListener('click', () => modalAvatar.close());
+modalAvatar.addEventListener('click', e => { if (e.target === modalAvatar) modalAvatar.close(); });
+modalAvatar.addEventListener('close', () => document.body.classList.remove('modal-open'));
+
+// Vista previa y límite de 2 MB antes de enviar
+const inputFoto = document.getElementById('inputFoto');
+const avPreview = document.getElementById('avPreview');
+const avError   = document.getElementById('avError');
+const btnFoto   = document.getElementById('btnSubirFoto');
+
+inputFoto.addEventListener('change', () => {
+    const f = inputFoto.files[0];
+    avError.textContent = '';
+    btnFoto.disabled = true;
+    avPreview.classList.remove('visible');
+    if (!f) return;
+
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
+        avError.textContent = 'Formato no válido. Usa JPG, PNG o WebP.';
+        return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+        avError.textContent = 'La imagen supera los 2 MB.';
+        return;
+    }
+    avPreview.src = URL.createObjectURL(f);
+    avPreview.classList.add('visible');
+    btnFoto.disabled = false;
+});
+
+/*  Utilidades  */
 function copiarEnlace(url) {
     navigator.clipboard.writeText(url).then(() => {
         alert("¡Enlace copiado al portapapeles!");
@@ -621,10 +780,11 @@ function copiarEnlace(url) {
     });
 }
 
-/* Recuerda la última pestaña (útil al volver tras guardar un cambio) */
+/* Recuerda la última pestaña  */
 let pestanaGuardada = 'tbr';
 try { pestanaGuardada = localStorage.getItem('perfilTab') || 'tbr'; } catch (e) {}
 abrirPestana(pestanaGuardada);
 </script>
+   <script src="/Reads/public/portadas_cola.js" defer></script>
 </body>
 </html>

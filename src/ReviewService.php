@@ -10,9 +10,7 @@ class ReviewService {
         $this->db = new Database();
     }
 
-    // Guarda la reseña del usuario: la crea si no existe, la edita si ya existe
-    // y la borra si llega vacía. Devuelve true (o un mensaje de error).
-    public function guardarReseña($usuarioId, $libroId, $contenido) {
+    public function guardarReseña($usuarioId, $libroId, $contenido, $spoiler = null) {
         $libroId   = trim((string)$libroId);
         $contenido = trim((string)$contenido);
 
@@ -29,11 +27,16 @@ class ReviewService {
                 $this->db->pdo->prepare("DELETE FROM reseñas WHERE id = ?")->execute([$existente]);
             }
         } elseif ($existente) {
-            $this->db->pdo->prepare("UPDATE reseñas SET contenido = ?, fecha = NOW() WHERE id = ?")
-                      ->execute([$contenido, $existente]);
+            if ($spoiler === null) {
+                $this->db->pdo->prepare("UPDATE reseñas SET contenido = ?, fecha = NOW() WHERE id = ?")
+                          ->execute([$contenido, $existente]);
+            } else {
+                $this->db->pdo->prepare("UPDATE reseñas SET contenido = ?, spoiler = ?, fecha = NOW() WHERE id = ?")
+                          ->execute([$contenido, (int)$spoiler, $existente]);
+            }
         } else {
-            $this->db->pdo->prepare("INSERT INTO reseñas (usuario_id, libro_id, contenido) VALUES (?, ?, ?)")
-                      ->execute([$usuarioId, $libroId, $contenido]);
+            $this->db->pdo->prepare("INSERT INTO reseñas (usuario_id, libro_id, contenido, spoiler) VALUES (?, ?, ?, ?)")
+                      ->execute([$usuarioId, $libroId, $contenido, (int)$spoiler]);
         }
     
         try {
@@ -54,6 +57,13 @@ class ReviewService {
         return $c === false ? '' : (string)$c;
     }
 
+    // ¿La reseña del propio usuario está marcada como spoiler?
+    public function reseñaUsuarioEsSpoiler($usuarioId, $libroId) {
+        $stmt = $this->db->pdo->prepare("SELECT spoiler FROM reseñas WHERE usuario_id = ? AND libro_id = ? LIMIT 1");
+        $stmt->execute([$usuarioId, (string)$libroId]);
+        return (int)$stmt->fetchColumn() === 1;
+    }
+
     // Todas las reseñas del usuario, indexadas por libro_id 
     public function obtenerReseñasUsuario($usuarioId) {
         $stmt = $this->db->pdo->prepare("SELECT libro_id, contenido FROM reseñas WHERE usuario_id = ?");
@@ -67,7 +77,7 @@ class ReviewService {
 
     // Obtener reseñas de un libro
     public function obtenerReseñas($libroId) {
-        $sql = "SELECT r.contenido, u.nombre 
+        $sql = "SELECT r.contenido, r.spoiler, r.usuario_id, u.nombre 
                 FROM reseñas r 
                 JOIN usuarios u ON r.usuario_id = u.id
                 WHERE r.libro_id = ?

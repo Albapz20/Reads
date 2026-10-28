@@ -7,8 +7,11 @@ require_once "../src/ReviewService.php";
 require_once "../src/RatingService.php";
 require_once "../src/ListaService.php";
 require_once "../src/UserService.php";
-require_once "../src/PortadasVerificadas.php";   
+require_once "../src/PortadasVerificadas.php";
 require_once "../src/GenerosHelper.php";
+require_once "../src/Traductor.php";
+require_once "../src/VibesService.php";
+require_once "../src/ComunidadService.php";
 
 $authUser = Auth::usuario();
 $reviewService = new ReviewService();
@@ -25,6 +28,15 @@ if ($authUser) {
     $tema = $datos["tema_visual"] ?? "pastel";
 }
 $tema = strtolower(trim($tema));
+
+// Estados de lectura 
+$estados = [
+    'guardado'   => ['🎁', 'Wishlist'],
+    'tbr'        => ['🎯', 'TBR'],
+    'leyendo'    => ['📖', 'Leyendo'],
+    'leido'      => ['✅', 'Leído'],
+    'abandonado' => ['❌', 'Abandonado'],
+];
 
 function renderStars($rating) {
     $full = floor($rating);
@@ -93,7 +105,7 @@ if (isset($libroAPI["volumeInfo"])) {
 
     $descripcion = $info["description"] ?? "Sin descripción disponible.";
     $idioma = $info["language"] ?? "";
-    $paginasTotalesAPI = (int)($info["pageCount"] ?? 0);
+   $paginasTotalesAPI = (int)($info["pageCount"] ?? 0) ?: (int)($info["printedPageCount"] ?? 0);
 } else {
     // ---- OPEN LIBRARY ----
     $proveedor = "open_library";
@@ -160,10 +172,9 @@ $sinDesc = function ($d) {
 
 if (session_status() === PHP_SESSION_NONE) @session_start();
 $claveFallo = 'desc_fail_' . md5($id_externo . '|' . $titulo);
-// Si ya falló hace menos de 6 h, no repetir las búsquedas externas (con ?debug sí se repiten)
+// Si ya falló hace menos de 6 h, no repetir las búsquedas externas
 $saltarRescates = !isset($_GET['debug']) && isset($_SESSION[$claveFallo]) && (time() - $_SESSION[$claveFallo]) < 6 * 3600;
 
-// La clave de Google Books vive en config/config.local.php (ya no está en el código)
 $apiKey = (string)config('google_books_key', '');
 
 // Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
@@ -192,7 +203,6 @@ if ($sinDesc($descripcion)) {
 }
 
 // Descripción de rescate con Google Books
-// (la portada ya NO se toma de aquí: se busca más abajo con comprobación de título y autor)
 if (!$saltarRescates && $sinDesc($descripcion)) {
 
     $tituloLimpio = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
@@ -319,7 +329,7 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Otra edición del mismo libro (p. ej. el original en inglés), buscando por autor
+// Otra edición del mismo libro buscando por autor
 if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido") {
     $norm = function (string $t): string {
         $t = strtr(mb_strtolower($t, 'UTF-8'), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
@@ -377,7 +387,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             'author' => $autorNorm, 'limit' => 20,
             'fields' => 'key,title,author_name,number_of_pages_median',
         ]));
-        $obras = [];   // título base => clave de la obra
+        $obras = [];   
         $obrasCerca = [];
         foreach ($resO['docs'] ?? [] as $dO) {
             if (!in_array($autorNorm, array_map($clave, $dO['author_name'] ?? []), true)) continue;
@@ -413,7 +423,36 @@ if (empty(trim($descripcion))) {
     $descripcion = "Sin descripción disponible.";
 }
 if ($sinDesc($descripcion)) {
-    $_SESSION[$claveFallo] = time();   // recordar el fallo para no repetir las búsquedas
+    $_SESSION[$claveFallo] = time();   
+}
+
+// Descripción siempre en español: si está en inglés se traduce 
+if (!$sinDesc($descripcion) && Traductor::esIngles((string)$descripcion)) {
+    $claveTrad = 'trad_fail_' . md5((string)$descripcion);
+    $tradFalloReciente = isset($_SESSION[$claveTrad]) && (time() - $_SESSION[$claveTrad]) < 3600;
+
+    if (!$tradFalloReciente) {
+        $esp = (new Traductor($db->pdo))->aEspanol((string)$descripcion);
+        if ($esp !== null) {
+            $descripcion = $esp;
+            $descTraducida = true;
+            $descLog['traduccion'] = 'traducida al español';
+
+            // Guardar la versión en español en la lista del usuario 
+            if ($authUser) {
+                try {
+                    $db->pdo->prepare(
+                        "UPDATE listas_lectura SET descripcion = ?
+                         WHERE usuario_id = ? AND (libro_id = ? OR titulo = ?)
+                           AND (descripcion IS NULL OR descripcion <> ?)"
+                    )->execute([$descripcion, $authUser["id"], $id_externo, $titulo, $descripcion]);
+                } catch (Throwable $e) {}
+            }
+        } else {
+            $descLog['traduccion'] = 'no se pudo traducir (¿falta deepl_key o se agotó el límite?)';
+            $_SESSION[$claveTrad] = time();   // no insistir durante una hora
+        }
+    }
 }
 
 // Portada de rescate: solo si no hay ninguna, y solo se acepta si el libro encontrado es el mismo (título y autor coinciden)
@@ -430,7 +469,7 @@ if (strpos($portada, 'placehold.co') !== false) {
         if ($cov) {
             $portada = $cov['url'];
         } else {
-            $_SESSION[$claveCov] = time();   // no repetir la búsqueda en cada visita
+            $_SESSION[$claveCov] = time();   
         }
     }
 }
@@ -460,12 +499,26 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     if ($registro) {
         $listaService->cambiarEstado($authUser["id"], $registro["id"], $estado);
 
-        if ($paginasTotalesAPI > 0) {
-            $paginasLeidas = ($estado === "leido") ? $paginasTotalesAPI : 0;
-            $listaService->actualizarPaginas($authUser["id"], $registro["id"], $paginasTotalesAPI, $paginasLeidas);
+        // Páginas: se conserva el progreso ya guardado (antes se ponía a 0 al cambiar de estado)
+        $stPag = $db->pdo->prepare("SELECT paginas_totales, paginas_leidas FROM listas_lectura WHERE id = ? AND usuario_id = ?");
+        $stPag->execute([$registro["id"], $authUser["id"]]);
+        $actPag = $stPag->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $pagTotales = (int)($actPag["paginas_totales"] ?? 0);
+        if ($pagTotales <= 0) $pagTotales = $paginasTotalesAPI;
+        $pagLeidas = (int)($actPag["paginas_leidas"] ?? 0);
+
+        if ($estado === "leido") {
+            $pagLeidas = $pagTotales;
+        } elseif (in_array($estado, ["guardado", "tbr"], true)) {
+            $pagLeidas = 0;
         }
 
-        // Detectar el género automáticamente al guardar el libro (no pisa los géneros corregidos a mano)
+        if ($pagTotales > 0) {
+            $listaService->actualizarPaginas($authUser["id"], $registro["id"], $pagTotales, min($pagLeidas, $pagTotales));
+        }
+
+        // Detectar el género automáticamente al guardar el libro 
         try {
             $colGen = columnaGeneros($db->pdo);
             if ($colGen !== null) {
@@ -475,11 +528,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
         } catch (Throwable $e) {}
     }
 
-    header("Location: perfil.php");
+    // Mensaje de confirmación que se mostrará al recargar la ficha
+    $_SESSION['libro_msg'] = "Libro guardado como «" . ($estados[$estado][1] ?? $estado) . "».";
+
+    // Volver a la ficha del libro (así se puede puntuar y reseñar justo después)
+    $volver = basename($_SERVER['SCRIPT_NAME']) . "?id=" . urlencode((string)$id_externo);
+    if (!empty($descripcionURL)) {
+        $volver .= "&desc=" . urlencode($descripcionURL);
+    }
+    header("Location: " . $volver . "#puntuacion");
     exit;
 }
 
-// Datos del usuario sobre este libro (una sola consulta)
+// Datos del usuario sobre este libro 
 $estadoActual = null;
 $libroUser = null;
 $puntuacionUsuario = null;
@@ -491,7 +552,22 @@ if ($authUser) {
     $libroUser = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($libroUser) $estadoActual = $libroUser["estado"];
 
-    // Libros ya guardados sin género: se detecta al abrir la ficha (sin consultas extra)
+    // Páginas totales automáticas: si el libro guardado no las tiene y la API sí, se completan solas
+    if ($libroUser && (int)$libroUser["paginas_totales"] <= 0 && $paginasTotalesAPI > 0) {
+        try {
+            $leidasAct = (int)($libroUser["paginas_leidas"] ?? 0);
+            $progresoAct = (int)($libroUser["progreso"] ?? 0);
+            if ($leidasAct <= 0 && $progresoAct > 0) {
+                $leidasAct = (int)round($paginasTotalesAPI * $progresoAct / 100);
+            }
+            $leidasAct = min($leidasAct, $paginasTotalesAPI);
+            $listaService->actualizarPaginas($authUser["id"], $libroUser["id"], $paginasTotalesAPI, $leidasAct);
+            $libroUser["paginas_totales"] = $paginasTotalesAPI;
+            $libroUser["paginas_leidas"]  = $leidasAct;
+        } catch (Throwable $e) {}
+    }
+
+    // Libros ya guardados sin género: se detecta al abrir la ficha
     if ($libroUser) {
         try {
             $colGenero = columnaGeneros($db->pdo);
@@ -507,6 +583,7 @@ if ($authUser) {
 
     $puntuacionUsuario = $ratingService->obtenerPuntuacionUsuario($authUser["id"], $id_externo);
     $miReseña = $reviewService->obtenerReseñaUsuario($authUser["id"], $id_externo);
+    $miReseñaSpoiler = $reviewService->reseñaUsuarioEsSpoiler($authUser["id"], $id_externo);
 }
 
 $paginasTotales = $libroUser ? (int)$libroUser["paginas_totales"] : 0;
@@ -529,14 +606,6 @@ $medias  = $ratingService->obtenerMedias($id_externo);
 // URL de portada segura para usarla dentro de CSS url
 $portadaCss = str_replace(["'", '"', '(', ')', ' ', "\n"], ['%27', '%22', '%28', '%29', '%20', ''], $portada);
 
-$estados = [
-    'guardado'   => ['🎁', 'Wishlist'],
-    'tbr'        => ['🎯', 'TBR'],
-    'leyendo'    => ['📖', 'Leyendo'],
-    'leido'      => ['✅', 'Leído'],
-    'abandonado' => ['❌', 'Abandonado'],
-];
-
 $metricas = [
     'estrellas'  => ['⭐', 'General',           'estrellas',  '★'],
     'romance'    => ['💖', 'Romance',           'romance',    '💖'],
@@ -544,6 +613,59 @@ $metricas = [
     'lagrimas'   => ['💧', 'Lágrimas / Drama',  'lagrimas',   '💧'],
     'plot_twist' => ['⚡', 'Plot Twist',        'plot_twist', '⚡'],
 ];
+
+// Amigos que tienen este libro
+$amigosConLibro = $authUser
+    ? (new ComunidadService($db->pdo))->amigosConLibro((int)$authUser["id"], (string)$id_externo, $titulo)
+    : [];
+
+// Tablero de vibes y fanarts
+$vibesService = new VibesService($db->pdo);
+if ($authUser) {
+    $vibesService->autocompletar(
+        (string)$id_externo,
+        (string)$titulo,
+        ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '',
+        preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo) ? (string)$id_externo : '',
+        (string)$descripcion
+    );
+    $descLog['deviantart'] = $vibesService->estado ?? 'FALTA actualizar src/VibesService.php (no tiene la propiedad estado)';   // se ve con ?debug
+}
+$vibes = $vibesService->listar((string)$id_externo);
+$vibesPines    = array_values(array_filter($vibes, fn($v) => ($v['tipo'] ?? 'imagen') === 'pin'));
+$vibesImagenes = array_values(array_filter($vibes, fn($v) => ($v['tipo'] ?? 'imagen') !== 'pin'));
+
+$vbOnError = isset($_GET['debug'])
+    ? "this.style.outline='4px solid red'"
+    : "var f=this.closest('.vb-item'),m=f.parentNode;f.remove();if(!m.querySelector('.vb-item')){m.outerHTML='<p class=&quot;lb-empty&quot;>No se han podido cargar las imágenes.</p>';}";
+$descLog['vibes_en_bd'] = count($vibes) . ' imágenes' . (isset($vibes[0])
+    ? ' · la primera mide ' . mb_strlen($vibes[0]['imagen_url']) . ' caracteres: ' . mb_substr($vibes[0]['imagen_url'], 0, 110) . '…'
+    : '');
+
+$vibesMsg = $_SESSION['vibes_msg'] ?? null;
+unset($_SESSION['vibes_msg']);
+
+$libroMsg = $_SESSION['libro_msg'] ?? null;
+unset($_SESSION['libro_msg']);
+
+if (empty($_SESSION['csrf_vibes'])) {
+    $_SESSION['csrf_vibes'] = bin2hex(random_bytes(16));
+}
+$csrfVibes = $_SESSION['csrf_vibes'];
+
+if (empty($_SESSION['csrf_progreso'])) {
+    $_SESSION['csrf_progreso'] = bin2hex(random_bytes(16));
+}
+
+$misVibes = $authUser
+    ? count(array_filter($vibes, fn($v) => (int)$v['usuario_id'] === (int)$authUser['id']))
+    : 0;
+
+// Búsqueda lista en Pinterest / Google / DeviantArt
+$tituloBusqueda = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
+$autorBusqueda  = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
+$qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -554,6 +676,14 @@ $metricas = [
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= @filemtime(__DIR__ . '/css/styles.css') ?>">
     <script src="/Reads/public/main.js"></script>
+    <style>
+        .lb-spoiler-check { display:flex; align-items:center; gap:8px; margin:10px 0 14px; font-size:.9rem; font-weight:600; cursor:pointer; }
+        .lb-spoiler-check input { width:auto; margin:0; }
+        .lb-spoiler-tag { display:inline-block; margin-left:8px; padding:2px 10px; border-radius:999px; background:#fff3cd; color:#7a5b00; font-size:.75rem; font-weight:700; }
+        .lb-spoiler { margin-top:6px; }
+        .lb-spoiler summary { cursor:pointer; font-size:.85rem; font-weight:600; opacity:.8; }
+        .lb-spoiler[open] summary { margin-bottom:6px; }
+    </style>
 </head>
 
 <body class="page-libro">
@@ -571,7 +701,17 @@ $metricas = [
 
             <div class="lb-info">
                 <h1><?= htmlspecialchars($titulo) ?></h1>
-                <p class="lb-author"><?= htmlspecialchars($autor) ?></p>
+                <p class="lb-author">
+                    <?php if ($autor === 'Autor desconocido'): ?>
+                         Autor desconocido
+                    <?php else:
+                        $enlacesAutor = [];
+                        foreach (array_filter(array_map('trim', explode(',', $autor))) as $aNom) {
+                            $enlacesAutor[] = '<a href="autor.php?nombre=' . urlencode($aNom) . '" class="lb-author-link">' . htmlspecialchars($aNom) . '</a>';
+                        }
+                        echo implode(', ', $enlacesAutor);
+                    endif; ?>
+                </p>
 
                 <?php if ($paginasMostrar > 0 || $idioma !== '' || !empty($genActuales)): ?>
                 <div class="lb-chips">
@@ -603,6 +743,10 @@ $metricas = [
         <!-- Columna principal -->
         <div class="lb-col">
 
+            <?php if ($libroMsg): ?>
+                <p class="vb-msg ok"><?= htmlspecialchars($libroMsg) ?></p>
+            <?php endif; ?>
+
             <section class="lb-card">
                 <h2>Sobre este libro</h2>
                 <?php if (isset($_GET['debug'])): ?>
@@ -615,12 +759,138 @@ $metricas = [
                 <?php endif; ?>
             </section>
 
+            <section class="lb-card" id="sagaBox" style="display:none;"
+                data-titulo="<?= htmlspecialchars($titulo) ?>" data-autor="<?= htmlspecialchars($autor) ?>">
+                <h2 id="sagaTitulo">Saga</h2>
+                <p class="lb-empty" id="sagaSub"></p>
+                <ol class="lb-saga" id="sagaLista"></ol>
+            </section>
+
+            <!-- Vibes y fanarts -->
+            <section class="lb-card" id="vibes">
+                <div class="vb-head">
+                    <h2>🎨 Vibes y fanarts</h2>
+                    <div class="vb-buscar">
+                        <span>Buscar inspiración:</span>
+                        <a href="https://www.pinterest.com/search/pins/?q=<?= $qFanart ?>" target="_blank" rel="noopener">Pinterest</a>
+                        <a href="https://www.google.com/search?tbm=isch&q=<?= $qFanart ?>" target="_blank" rel="noopener">Google</a>
+                        <a href="https://www.deviantart.com/search?q=<?= $qFanart ?>" target="_blank" rel="noopener">DeviantArt</a>
+                    </div>
+                </div>
+
+                <?php if ($vibesMsg): ?>
+                    <p class="vb-msg <?= $vibesMsg[0] === 'ok' ? 'ok' : 'error' ?>"><?= htmlspecialchars($vibesMsg[1]) ?></p>
+                <?php endif; ?>
+
+                <?php if (empty($vibes)): ?>
+                    <p class="lb-empty">Todavía no hay imágenes. Busca fanarts o moodboards de este libro y añade el primero.</p>
+                <?php else: ?>
+                    <?php if ($vibesImagenes): ?>
+                    <div class="vb-muro">
+                        <?php foreach ($vibesImagenes as $v):
+                            $esMia = $authUser && (int)$v['usuario_id'] === (int)$authUser['id']; ?>
+                            <figure class="vb-item">
+                                <img src="<?= htmlspecialchars($v['imagen_url']) ?>"
+                                     alt="<?= htmlspecialchars($v['nota'] ?: 'Fanart de ' . $titulo) ?>"
+                                     loading="lazy" referrerpolicy="no-referrer"
+                                     onerror="<?= $vbOnError ?>">
+                                <figcaption class="vb-pie">
+                                    <div class="vb-texto">
+                                        <?php if (!empty($v['nota'])): ?>
+                                            <span class="vb-nota"><?= htmlspecialchars($v['nota']) ?></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($v['credito']) || !empty($v['enlace_origen'])): ?>
+                                            <?php $textoCredito = !empty($v['credito']) ? $v['credito'] : 'Ver fuente'; ?>
+                                            <?php if (!empty($v['enlace_origen'])): ?>
+                                                <a class="vb-credito" href="<?= htmlspecialchars($v['enlace_origen']) ?>" target="_blank" rel="noopener nofollow ugc">🎨 <?= htmlspecialchars($textoCredito) ?></a>
+                                            <?php else: ?>
+                                                <span class="vb-credito">🎨 <?= htmlspecialchars($textoCredito) ?></span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+
+                                    <?php if ($authUser): ?>
+                                        <form method="POST" action="vibes_accion.php" class="vb-mini"
+                                              onsubmit="return confirm('<?= $esMia ? '¿Eliminar esta imagen?' : '¿Reportar esta imagen como inapropiada?' ?>');">
+                                            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfVibes) ?>">
+                                            <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
+                                            <input type="hidden" name="vibe_id" value="<?= (int)$v['id'] ?>">
+                                            <input type="hidden" name="accion" value="<?= $esMia ? 'eliminar' : 'reportar' ?>">
+                                            <button type="submit" title="<?= $esMia ? 'Eliminar' : 'Reportar' ?>"><?= $esMia ? '🗑️' : '🚩' ?></button>
+                                        </form>
+                                    <?php endif; ?>
+                                </figcaption>
+                            </figure>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($vibesPines): ?>
+                        <div class="vb-pines">
+                            <?php foreach ($vibesPines as $v):
+                                $esMia = $authUser && (int)$v['usuario_id'] === (int)$authUser['id']; ?>
+                                <div class="vb-pin">
+                                    <a data-pin-do="embedPin" data-pin-width="small" href="<?= htmlspecialchars($v['imagen_url']) ?>"></a>
+                                    <?php if ($authUser): ?>
+                                        <form method="POST" action="vibes_accion.php" class="vb-pin-acciones"
+                                              onsubmit="return confirm('<?= $esMia ? '¿Quitar este pin?' : '¿Reportar este pin como inapropiado?' ?>');">
+                                            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfVibes) ?>">
+                                            <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
+                                            <input type="hidden" name="vibe_id" value="<?= (int)$v['id'] ?>">
+                                            <input type="hidden" name="accion" value="<?= $esMia ? 'eliminar' : 'reportar' ?>">
+                                            <button type="submit"><?= $esMia ? '🗑️ Quitar' : '🚩 Reportar' ?></button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <script async defer src="https://assets.pinterest.com/js/pinit.js"></script>
+                    <?php endif; ?>
+                <?php endif; ?>
+
+                <?php if ($authUser): ?>
+                    <details class="vb-add" <?= $vibesMsg && $vibesMsg[0] === 'error' ? 'open' : '' ?>>
+                        <summary>＋ Añadir una imagen</summary>
+                        <form method="POST" action="vibes_accion.php">
+                            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfVibes) ?>">
+                            <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
+                            <input type="hidden" name="accion" value="agregar">
+
+                            <label>Dirección de la imagen o enlace de un pin de Pinterest
+                                <input type="url" name="imagen_url" required maxlength="2000" placeholder="https://...">
+                            </label>
+                            <p class="vb-ayuda"><strong>Pinterest:</strong> abre el pin y copia la dirección de la barra del navegador (pinterest.com/pin/...). <strong>Otras webs:</strong> botón derecho sobre la imagen → «Copiar dirección de la imagen». Tiene que empezar por https://</p>
+
+                            <label>Artista (crédito)
+                                <input type="text" name="credito" maxlength="120" placeholder="@usuario o nombre del artista">
+                            </label>
+                            <label>Enlace a la publicación original
+                                <input type="url" name="enlace_origen" maxlength="600" placeholder="https://... (opcional, pero se agradece)">
+                            </label>
+                            <label>Nota
+                                <input type="text" name="nota" maxlength="160" placeholder="Ej.: Nora y Cole (opcional)">
+                            </label>
+
+                            <p class="vb-ayuda">Solo imágenes aptas para todos los públicos y con crédito al artista. Puedes añadir hasta <?= VibesService::MAX_POR_USUARIO ?> por libro<?= $misVibes > 0 ? " (llevas $misVibes)" : '' ?>.</p>
+                            <button type="submit" class="lb-btn">Añadir al tablero</button>
+                        </form>
+                    </details>
+                <?php else: ?>
+                    <p class="lb-login-hint"><a href="login.php">Inicia sesión</a> para añadir tus propias imágenes.</p>
+                <?php endif; ?>
+            </section>
+
             <?php if ($authUser): ?>
             <section class="lb-card">
                 <h2>Tu reseña</h2>
                 <form action="guardar_reseña.php" method="POST">
                     <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
                     <textarea name="contenido" rows="4" placeholder="¿Qué te ha parecido?"><?= htmlspecialchars($miReseña) ?></textarea>
+                    <input type="hidden" name="spoiler_check" value="1">
+                    <label class="lb-spoiler-check">
+                        <input type="checkbox" name="spoiler" value="1" <?= !empty($miReseñaSpoiler) ? 'checked' : '' ?>>
+                        <span>⚠️ Mi reseña contiene spoilers</span>
+                    </label>
                     <button type="submit" class="lb-btn" style="width:auto; padding:10px 22px;">Guardar reseña</button>
                 </form>
             </section>
@@ -634,7 +904,15 @@ $metricas = [
                     <?php foreach ($reseñas as $r): ?>
                         <div class="lb-review">
                             <strong><?= htmlspecialchars($r['nombre']) ?></strong>
-                            <?= nl2br(htmlspecialchars($r['contenido'])) ?>
+                            <?php if (!empty($r['spoiler'])): ?>
+                                <span class="lb-spoiler-tag">⚠️ Contiene spoilers</span>
+                                <details class="lb-spoiler">
+                                    <summary>Mostrar reseña (puede destripar el libro)</summary>
+                                    <?= nl2br(htmlspecialchars($r['contenido'])) ?>
+                                </details>
+                            <?php else: ?>
+                                <?= nl2br(htmlspecialchars($r['contenido'])) ?>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -644,6 +922,16 @@ $metricas = [
         <!-- Columna lateral -->
         <aside class="lb-col">
 
+            <?php if (!empty($amigosConLibro)): ?>
+            <section class="lb-card">
+                <h2>👥 Tus amigos</h2>
+                <?php foreach ($amigosConLibro as $am): ?>
+                    <p style="margin:6px 0;"><a href="usuario.php?id=<?= (int)$am['id'] ?>"><?= htmlspecialchars($am['nombre']) ?></a>
+                        · <?= htmlspecialchars($am['estado']) ?></p>
+                <?php endforeach; ?>
+            </section>
+            <?php endif; ?>
+
             <?php if ($authUser && $libroUser): ?>
             <section class="lb-card">
                 <h2>Tu progreso</h2>
@@ -652,7 +940,7 @@ $metricas = [
                     <span><?= $paginasLeidas ?> / <?= $paginasTotales ?> págs.</span>
                 </div>
                 <div class="lb-bar"><div style="width: <?= (int)$progreso ?>%"></div></div>
-                <a href="editar_libro.php?id=<?= (int)$libroUser["id"] ?>" class="lb-link">✏️ Editar progreso</a>
+                <a href="editar_libro.php?id=<?= (int)$libroUser["id"] ?>&volver=libro" class="lb-link js-editar-progreso" data-id="<?= (int)$libroUser["id"] ?>" data-recargar="1">✏️ Editar progreso</a>
             </section>
 
             <?php if ($colGenero !== null): ?>
@@ -674,32 +962,10 @@ $metricas = [
                 </form>
             </section>
             <?php endif; ?>
-
-            <section class="lb-card">
-                <h2>Gestionar libro</h2>
-
-                <?php if ($libroUser["estado"] === "leido" && !empty($libroUser["fecha_fin"])): ?>
-                    <p style="margin:0 0 14px; font-size:.9rem;"><strong>Terminado el:</strong> <?= htmlspecialchars(date('d/m/Y', strtotime($libroUser["fecha_fin"]))) ?></p>
-                <?php endif; ?>
-
-                <?php if ($libroUser["estado"] === "abandonado"): ?>
-                    <form method="POST" action="actualizar_progreso.php" style="margin-bottom:16px;">
-                        <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
-                        <label for="motivo_abandono" style="font-weight:700; font-size:.9rem; display:block; margin-bottom:6px;">Motivo de abandono</label>
-                        <textarea name="motivo_abandono" id="motivo_abandono" rows="3" placeholder="¿Por qué lo dejaste?"><?= htmlspecialchars($libroUser["motivo_abandono"] ?? "") ?></textarea>
-                        <button type="submit" class="lb-btn">Guardar motivo</button>
-                    </form>
-                <?php endif; ?>
-
-                <form method="POST" action="eliminar_libro.php" onsubmit="return confirm('¿Seguro que quieres eliminar este libro de tu biblioteca?');">
-                    <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
-                    <button type="submit" class="lb-btn" style="background:#c0392b;">🗑️ Eliminar de mi biblioteca</button>
-                </form>
-            </section>
             <?php endif; ?>
 
             <?php if ($authUser): ?>
-            <section class="lb-card">
+            <section class="lb-card" id="puntuacion">
                 <h2>Tu puntuación</h2>
                 <form action="guardar_puntuacion.php" method="POST" class="lb-rate">
                     <input type="hidden" name="libro_id" value="<?= htmlspecialchars($id_externo) ?>">
@@ -733,20 +999,82 @@ $metricas = [
                     <p class="lb-empty">Aún no hay puntuaciones.</p>
                 <?php endif; ?>
             </section>
+
+            <?php if ($authUser && $libroUser): ?>
+            <section class="lb-card">
+                <h2>Gestionar libro</h2>
+
+                <?php if ($libroUser["estado"] === "leido" && !empty($libroUser["fecha_fin"])): ?>
+                    <p style="margin:0 0 14px; font-size:.9rem;"><strong>Terminado el:</strong> <?= htmlspecialchars(date('d/m/Y', strtotime($libroUser["fecha_fin"]))) ?></p>
+                <?php endif; ?>
+
+                <?php if ($libroUser["estado"] === "abandonado"): ?>
+                    <form method="POST" action="actualizar_progreso.php" style="margin-bottom:16px;">
+                        <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
+                        <input type="hidden" name="volver" value="libro">
+                        <label for="motivo_abandono" style="font-weight:700; font-size:.9rem; display:block; margin-bottom:6px;">Motivo de abandono</label>
+                        <textarea name="motivo_abandono" id="motivo_abandono" rows="3" placeholder="¿Por qué lo dejaste?"><?= htmlspecialchars($libroUser["motivo_abandono"] ?? "") ?></textarea>
+                        <button type="submit" class="lb-btn">Guardar motivo</button>
+                    </form>
+                <?php endif; ?>
+
+                <form method="POST" action="eliminar_libro.php" onsubmit="return confirm('¿Seguro que quieres eliminar este libro de tu biblioteca?');">
+                    <input type="hidden" name="libro_id" value="<?= (int)$libroUser["id"] ?>">
+                    <button type="submit" class="lb-btn" style="background:#c0392b;">🗑️ Eliminar de mi biblioteca</button>
+                </form>
+            </section>
+            <?php endif; ?>
         </aside>
     </div>
 </div>
 
+<?php if ($authUser): ?>
+    <?php include __DIR__ . '/progreso_modal.php'; ?>
+<?php endif; ?>
+
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-        <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
-        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
-        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
-        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
-        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
-        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
-        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
+
+        <a href="index.php" class="nav-card-float">
+            <span class="nav-icon">🏠</span>
+            <span>Inicio</span>
+        </a>
+
+        <a href="perfil.php" class="nav-card-float">
+            <span class="nav-icon">👤</span>
+            <span>Mi perfil</span>
+        </a>
+
+        <a href="biblioteca.php" class="nav-card-float">
+            <span class="nav-icon">📚</span>
+            <span>Mi estantería</span>
+        </a>
+
+        <a href="estadisticas.php" class="nav-card-float">
+            <span class="nav-icon">📊</span>
+            <span>Estadísticas</span>
+        </a>
+
+        <a href="calendario.php" class="nav-card-float">
+            <span class="nav-icon">📅</span>
+            <span>Calendario</span>
+        </a>
+
+        <a href="buscar.php" class="nav-card-float">
+            <span class="nav-icon">🔍</span>
+            <span>Buscar</span>
+        </a>
+
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
+
+        <a href="ajustes.php" class="nav-card-float">
+            <span class="nav-icon">⚙️</span>
+            <span>Ajustes</span>
+        </a>
     </nav>
 </div>
 
@@ -771,6 +1099,38 @@ document.addEventListener('DOMContentLoaded', () => {
         f.addEventListener('change', limitar);
         limitar();
     });
+
+    // Saga (se carga aparte para no frenar la página)
+    const sagaBox = document.getElementById('sagaBox');
+    if (sagaBox) {
+        const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const qs = new URLSearchParams({ titulo: sagaBox.dataset.titulo, autor: sagaBox.dataset.autor });
+
+        fetch('api_saga.php?' + qs)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                const s = d && d.saga;
+                if (!s) return;
+
+                document.getElementById('sagaTitulo').textContent = 'Saga: ' + s.nombre;
+                const partes = [];
+                if (s.numero) partes.push('Este es el libro ' + s.numero + ' de la saga');
+                if (s.libros.length > 1) partes.push(s.libros.length + ' libros en total');
+                document.getElementById('sagaSub').textContent = partes.join(' · ');
+
+                document.getElementById('sagaLista').innerHTML = s.libros.map(l => {
+                    const num = l.numero ?? '·';
+                    const marca = l.lo_tienes ? ' <small>✅ en tu biblioteca</small>' : '';
+                    const cuerpo = l.actual
+                        ? `<strong>${esc(l.titulo)}</strong> <small>(este libro)</small>`
+                        : `<a href="${esc(l.url)}">${esc(l.titulo)}</a>${marca}`;
+                    return `<li class="${l.actual ? 'actual' : ''}"><span class="n">${esc(num)}</span><span>${cuerpo}</span></li>`;
+                }).join('');
+
+                sagaBox.style.display = '';
+            })
+            .catch(() => {});
+    }
 
     // Selector de puntuación (admite medias puntuaciones)
     function updateVisuals(container, val) {

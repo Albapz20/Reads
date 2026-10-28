@@ -28,9 +28,11 @@ if ($buscado) {
     if ($termino !== "") {
         $resultados = $service->buscarLibros($termino);
 
-        // Guardar en el historial de búsqueda
-        $stmt = $db->pdo->prepare("INSERT INTO historial_busqueda (usuario_id, termino, fecha) VALUES (?, ?, NOW())");
-        $stmt->execute([$usuario["id"], $termino]);
+        // Guardar en el historial de búsqueda (salvo si viene de pulsar una recomendación)
+        if (!isset($_GET['rec'])) {
+            $stmt = $db->pdo->prepare("INSERT INTO historial_busqueda (usuario_id, termino, fecha) VALUES (?, ?, NOW())");
+            $stmt->execute([$usuario["id"], $termino]);
+        }
     }
 }
 
@@ -66,7 +68,6 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <script src="main.js"></script>
     <title>Buscar libros</title>
-    
 </head>
 
 <body class="page-buscar">
@@ -144,7 +145,15 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
                     <div class="bs-info">
                         <h3><a href="libro.php?id=<?= $enc ?>"><?= htmlspecialchars($tituloL) ?></a></h3>
                         <div class="bs-meta">
-                            <span><?= htmlspecialchars($autorL) ?></span>
+                            <span><?php
+                                $linksAutor = [];
+                                foreach (array_filter(array_map('trim', explode(',', $autorL))) as $aNom) {
+                                    $linksAutor[] = ($autorL === 'Autor desconocido')
+                                        ? htmlspecialchars($aNom)
+                                        : '<a href="autor.php?nombre=' . urlencode($aNom) . '">' . htmlspecialchars($aNom) . '</a>';
+                                }
+                                echo implode(', ', $linksAutor);
+                            ?></span>
                             <?php if ($anioL !== '' && $anioL !== 'N/A'): ?><span class="anio"><?= htmlspecialchars($anioL) ?></span><?php endif; ?>
                         </div>
                         <?php if ($descL !== ''): ?><p class="bs-desc"><?= htmlspecialchars($descL) ?></p><?php endif; ?>
@@ -174,6 +183,8 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
 
     <?php endif; ?>
 
+</div><!-- /bs-wrap -->
+
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
@@ -187,25 +198,33 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
             <span class="nav-icon">👤</span>
             <span>Mi perfil</span>
         </a>
+
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
         </a>
+
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
-        
+        </a>
+
         <a href="calendario.php" class="nav-card-float">
             <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
+            <span>Calendario</span>
         </a>
-        
+
         <a href="buscar.php" class="nav-card-float active">
             <span class="nav-icon">🔍</span>
             <span>Buscar</span>
         </a>
 
-          <a href="ajustes.php" class="nav-card-float">
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
+        
+        <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
         </a>
@@ -238,14 +257,20 @@ function escapeHtml(t) {
             sub.innerHTML = 'Porque leíste ' + nombres.join(' y ') + (resto > 0 ? ' y ' + resto + ' más' : '');
         }
 
-        cont.innerHTML = libros.map(l => `
-            <a class="rec-card" href="libro.php?id=${encodeURIComponent(l.id)}" title="${escapeHtml(l.titulo)}">
-                <div class="portada">
-                    <img src="${escapeHtml(l.portada || '')}" alt="" loading="lazy" onerror="this.closest('.rec-card').remove()">
-                </div>
-                <div class="t">${escapeHtml(l.titulo)}</div>
-                <div class="a">${escapeHtml(l.autor || '')}</div>
-            </a>`).join('');
+        cont.innerHTML = libros.map(l => {
+            // Open Library trae su propia url (al buscador); Google y locales abren libro.php
+            const enlace = l.url
+                ? l.url + '&rec=1'
+                : 'libro.php?id=' + encodeURIComponent(l.id);
+            return `
+                <a class="rec-card" href="${escapeHtml(enlace)}" title="${escapeHtml(l.titulo)}">
+                    <div class="portada">
+                        <img src="${escapeHtml(l.portada || '')}" alt="" loading="lazy" onerror="this.closest('.rec-card').remove()">
+                    </div>
+                    <div class="t">${escapeHtml(l.titulo)}</div>
+                    <div class="a">${escapeHtml(l.autor || '')}</div>
+                </a>`;
+        }).join('');
     } catch (e) {
         bloque.style.display = 'none';
     }

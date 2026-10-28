@@ -111,3 +111,5 @@ document.addEventListener('error', function (e) {
         img.src = crearPortadaElegante(titulo, autor);
     }
 }, true);
+
+   (function(){var s=document.createElement('script');s.src='/Reads/public/portadas_cola.js';s.defer=true;document.head.appendChild(s);})();

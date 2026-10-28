@@ -3,6 +3,8 @@ require_once "../src/Auth.php";
 require_once "../src/Database.php";
 require_once "../src/UserService.php";
 require_once "../src/helpers.php";
+require_once "../src/ComunidadService.php";
+require_once "../src/ComunidadVistas.php";
 
 $usuario = Auth::usuario();
 
@@ -11,11 +13,22 @@ if (!$usuario) {
     exit;
 }
 
+// Token para actualizar el progreso desde el recuadro (sin salir de la página)
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (empty($_SESSION['csrf_progreso'])) {
+    $_SESSION['csrf_progreso'] = bin2hex(random_bytes(16));
+}
+
 $userService = new UserService();
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
 
 $db = new Database();
+
+// Comunidad: lo que están leyendo las personas a las que sigues
+$comunidad     = new ComunidadService($db->pdo);
+$amigosLeyendo = $comunidad->amigosLeyendo((int)$usuario["id"], 10);
+$siguiendoN    = $comunidad->contadores((int)$usuario["id"])['siguiendo'];
 
 // Año actual para métricas dinámicas
 $year = date("Y");
@@ -122,7 +135,7 @@ if (!empty($historial) && is_array($historial)) {
     $busquedasUnicas = array_slice($busquedasUnicas, 0, 6);
 }
 
-/* Wrap Up */
+/* Wrap up */
 $mesesNombre = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio',
                 7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
 $mesesInicial = ['E', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
@@ -189,14 +202,34 @@ $wuPagDia = round($wuPaginas / $wuDias, 1);
 $wuHoras = round($wuPaginas / 60, 1);
 $wuMedia = ($wuTotalLibros > 0) ? round($wuPaginas / $wuTotalLibros) : 0;
 
-// Portada del libro más largo y collage con los últimos libros
+// Portada del libro más largo
 $wuLargoPortada = $wuLargo ? obtenerPortadaValida($wuLargo['portada'] ?? '', (int)$wuLargo['id']) : '';
-$wuCollage = [];
-foreach (array_slice($wuLibros, 0, 8) as $libroWrap) {
-    $wuCollage[] = [
-        'titulo'  => $libroWrap['titulo'],
-        'portada' => obtenerPortadaValida($libroWrap['portada'] ?? '', (int)$libroWrap['id']),
-    ];
+
+// Día de la semana en el que más libros terminas
+$diasPlural = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábados', 7 => 'domingos'];
+$wuDiasCuenta = array_fill(1, 7, 0);
+foreach ($wuLibros as $libroWrap) {
+    $d = (int)date('N', strtotime($libroWrap['fecha_fin']));
+    if ($d >= 1 && $d <= 7) $wuDiasCuenta[$d]++;
+}
+$wuDiaTopNum = max($wuDiasCuenta);
+$wuDiaTop = ($wuDiaTopNum > 0) ? array_search($wuDiaTopNum, $wuDiasCuenta) : null;
+
+// Mejor racha de meses seguidos con algún libro terminado
+$wuRachaMax = 0; $wuRachaIni = 0; $wuRachaFin = 0;
+$rachaAct = 0;  $rachaActIni = 0;
+for ($m = 1; $m <= 12; $m++) {
+    if ($wuMeses[$m] > 0) {
+        if ($rachaAct === 0) $rachaActIni = $m;
+        $rachaAct++;
+        if ($rachaAct > $wuRachaMax) {
+            $wuRachaMax = $rachaAct;
+            $wuRachaIni = $rachaActIni;
+            $wuRachaFin = $m;
+        }
+    } else {
+        $rachaAct = 0;
+    }
 }
 
 // Texto para compartir
@@ -220,6 +253,7 @@ if (!function_exists('e')) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
+    <link rel="stylesheet" href="/Reads/public/css/comunidad.css?v=<?= @filemtime(__DIR__ . '/css/comunidad.css') ?>">
     <script src="main.js"></script>
     <title>Inicio - Dashboard Reads</title>
 </head>
@@ -254,7 +288,7 @@ if (!function_exists('e')) {
                     $portadaSrc = obtenerPortadaValida($miLibro['portada'] ?? '', (int)$miLibro['id']);
                     $tienePortada = !empty($portadaSrc);
                 ?>
-                    <div class="Reads-reading-hero">
+                    <div class="Reads-reading-hero" data-card="<?= (int)$miLibro['id'] ?>">
                         <div class="Reads-cover-wrap">
                             <a href="libro.php?id=<?= urlencode($miLibro['libro_id'] ?? $miLibro['id']) ?>" style="display:block; width:100%; height:100%;">
                                 <?php if ($tienePortada): ?>
@@ -276,15 +310,18 @@ if (!function_exists('e')) {
 
                             <div style="margin-bottom: 12px;">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; margin-bottom: 4px;">
-                                    <span>Progreso</span>
-                                    <span><?= $miPct ?>%</span>
+                                    <span>Progreso <small class="js-pags" style="font-weight: normal; opacity: .75;"><?= ((int)$miLibro['paginas_totales'] > 0) ? (int)$miLibro['paginas_leidas'] . ' / ' . (int)$miLibro['paginas_totales'] . ' págs.' : '' ?></small></span>
+                                    <span class="js-pct"><?= $miPct ?>%</span>
                                 </div>
                                 <div class="barra-progreso-bg" style="height: 8px; margin: 0;">
-                                    <div class="barra-progreso-fill" style="width: <?= $miPct ?>%;"></div>
+                                    <div class="barra-progreso-fill js-fill" style="width: <?= $miPct ?>%;"></div>
                                 </div>
                             </div>
 
-                            <a href="libro.php?id=<?= urlencode($miLibro['libro_id'] ?? $miLibro['id']) ?>" class="btn-Reads-continue">Continuar Lectura →</a>
+                            <!-- Abre el recuadro de progreso sin salir del inicio (si falla el JS, lleva a la ficha) -->
+                            <a href="libro.php?id=<?= urlencode($miLibro['libro_id'] ?? $miLibro['id']) ?>"
+                               class="btn-Reads-continue js-editar-progreso"
+                               data-id="<?= (int)$miLibro['id'] ?>">Continuar Lectura →</a>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -353,17 +390,19 @@ if (!function_exists('e')) {
         <?php endif; ?>
     </div>
 
-    <!-- Wrap Up -->
+    <!-- Wrap up -->
     <div class="panel wu-panel" id="wrapup" style="margin-top: 25px;">
         <div class="wu-head">
             <h2>🎁 Tu Wrap Up <?= $anioWrap ?></h2>
 
             <?php if (count($aniosWrap) > 1): ?>
-                <div class="wu-anios">
-                    <?php foreach ($aniosWrap as $a): ?>
-                        <a href="?wrap=<?= $a ?>#wrapup" class="wu-anio <?= $a === $anioWrap ? 'activo' : '' ?>"><?= $a ?></a>
-                    <?php endforeach; ?>
-                </div>
+                <form method="get" action="index.php#wrapup" class="wu-anio-form">
+                    <select name="wrap" class="wu-select" aria-label="Año del Wrap Up" onchange="this.form.submit()">
+                        <?php foreach ($aniosWrap as $a): ?>
+                            <option value="<?= $a ?>" <?= $a === $anioWrap ? 'selected' : '' ?>><?= $a ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
             <?php endif; ?>
         </div>
 
@@ -374,107 +413,68 @@ if (!function_exists('e')) {
                 <a href="biblioteca.php" class="btn-Reads-continue">Ir a mi estantería</a>
             </div>
         <?php else: ?>
-            <div class="wu-visor" data-total="6">
-                <div class="wu-track">
+            <div class="wu-bento">
 
-                    <!-- Libros -->
-                    <section class="wu-slide wu-s1">
-                        <span class="wu-kicker">Tu <?= $anioWrap ?> en libros</span>
-                        <span class="wu-big"><?= $wuTotalLibros ?></span>
-                        <span class="wu-text"><?= $wuTotalLibros === 1 ? 'libro terminado' : 'libros terminados' ?></span>
-                        <?php if ($anioWrap === (int)$year): ?>
-                            <span class="wu-chip">🎯 Reto: <?= $librosLeidos ?> de <?= $objetivoAnual ?> (<?= $porcentajeReto ?>%)</span>
-                        <?php else: ?>
-                            <span class="wu-chip">Un año de historias</span>
-                        <?php endif; ?>
-                    </section>
-
-                    <!-- Páginas -->
-                    <section class="wu-slide wu-s2">
-                        <span class="wu-kicker">Páginas devoradas</span>
-                        <span class="wu-big"><?= number_format($wuPaginas, 0, ',', '.') ?></span>
-                        <span class="wu-text">≈ <?= str_replace('.', ',', (string)$wuHoras) ?> horas de lectura</span>
-                        <div class="wu-chips">
-                            <span class="wu-chip">⚡ <?= str_replace('.', ',', (string)$wuPagDia) ?> págs/día</span>
-                            <span class="wu-chip">📘 <?= number_format($wuMedia, 0, ',', '.') ?> págs/libro</span>
-                        </div>
-                    </section>
-
-                    <!-- Autor más leído -->
-                    <section class="wu-slide wu-s3">
-                        <span class="wu-kicker">Tu autor del año</span>
-                        <?php if ($wuAutorTop): ?>
-                            <span class="wu-medio"><?= e($wuAutorTop) ?></span>
-                            <span class="wu-text">
-                                <?php if ($wuAutorTopNum > 1): ?>
-                                    <?= $wuAutorTopNum ?> libros suyos este año
-                                <?php else: ?>
-                                    Aún no repites autor: ¡variedad total!
-                                <?php endif; ?>
-                            </span>
-                        <?php else: ?>
-                            <span class="wu-text">Sin datos de autores todavía</span>
-                        <?php endif; ?>
-                    </section>
-
-                    <!-- Libro más largo -->
-                    <section class="wu-slide wu-s4">
-                        <span class="wu-kicker">El peso pesado</span>
-                        <?php if ($wuLargo): ?>
+                <!-- Libro más largo -->
+                <a class="wu-tile wu-grande" href="<?= $wuLargo ? 'libro.php?id=' . urlencode($wuLargo['libro_id'] ?? $wuLargo['id']) : 'biblioteca.php' ?>">
+                    <span class="wu-etq">📏 Tu libro más largo</span>
+                    <?php if ($wuLargo): ?>
+                        <div class="wu-grande-cuerpo">
                             <?php if (!empty($wuLargoPortada)): ?>
-                                <img class="wu-portada" src="<?= e($wuLargoPortada) ?>" alt="<?= e($wuLargo['titulo']) ?>"
-                                     onerror="this.style.display='none'">
+                                <img class="wu-portada" src="<?= e($wuLargoPortada) ?>" alt="<?= e($wuLargo['titulo']) ?>" onerror="this.style.display='none'">
                             <?php endif; ?>
-                            <span class="wu-medio"><?= e($wuLargo['titulo']) ?></span>
-                            <span class="wu-text"><?= number_format($wuLargo['paginas'], 0, ',', '.') ?> páginas</span>
-                            <?php if ($wuCorto && $wuCorto['id'] !== $wuLargo['id']): ?>
-                                <span class="wu-chip">⚡ El más cortito: <?= e($wuCorto['titulo']) ?> (<?= (int)$wuCorto['paginas'] ?> págs)</span>
-                            <?php endif; ?>
-                        <?php else: ?>
-                            <span class="wu-text">Añade el número de páginas a tus libros para ver este dato</span>
-                        <?php endif; ?>
-                    </section>
-
-                    <!-- Mes estrella -->
-                    <section class="wu-slide wu-s5">
-                        <span class="wu-kicker">Tu mes estrella</span>
-                        <?php if ($wuMesTop): ?>
-                            <span class="wu-medio"><?= ucfirst($mesesNombre[$wuMesTop]) ?></span>
-                            <span class="wu-text"><?= $wuMesTopNum ?> <?= $wuMesTopNum === 1 ? 'libro terminado' : 'libros terminados' ?></span>
-                        <?php endif; ?>
-                        <div class="wu-meses">
-                            <?php foreach ($wuMeses as $numMes => $cuantos): ?>
-                                <div class="wu-mes <?= $numMes === $wuMesTop ? 'top' : '' ?>" title="<?= ucfirst($mesesNombre[$numMes]) ?>: <?= $cuantos ?>">
-                                    <i style="height: <?= $wuMesTopNum > 0 ? max(4, round(($cuantos / $wuMesTopNum) * 100)) : 4 ?>%;"></i>
-                                    <span><?= $mesesInicial[$numMes - 1] ?></span>
-                                </div>
-                            <?php endforeach; ?>
+                            <div class="wu-grande-texto">
+                                <strong class="wu-titulo"><?= e($wuLargo['titulo']) ?></strong>
+                                <span class="wu-valor"><?= number_format($wuLargo['paginas'], 0, ',', '.') ?> páginas</span>
+                                <?php if ($wuCorto && $wuCorto['id'] !== $wuLargo['id']): ?>
+                                    <small>El más cortito: <?= e($wuCorto['titulo']) ?> (<?= (int)$wuCorto['paginas'] ?> págs)</small>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                    </section>
+                    <?php else: ?>
+                        <p class="wu-aviso">Añade el número de páginas a tus libros para ver este dato.</p>
+                    <?php endif; ?>
+                </a>
 
-                    <!-- Resumen -->
-                    <section class="wu-slide wu-s6">
-                        <span class="wu-kicker">Tu año de un vistazo</span>
-                        <div class="wu-collage">
-                            <?php foreach ($wuCollage as $c): ?>
-                                <div class="wu-mini" title="<?= e($c['titulo']) ?>">
-                                    <?php if (!empty($c['portada'])): ?>
-                                        <img src="<?= e($c['portada']) ?>" alt="<?= e($c['titulo']) ?>" onerror="this.remove()">
-                                    <?php else: ?>
-                                        <span>📖</span>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <span class="wu-text"><?= $wuTotalLibros ?> libros · <?= number_format($wuPaginas, 0, ',', '.') ?> páginas</span>
-                        <button type="button" class="wu-copiar" id="wu-copiar" data-texto="<?= e($wuTextoCompartir) ?>">📋 Copiar mi resumen</button>
-                    </section>
+                <!-- Autor del año -->
+                <?php if ($wuAutorTop): ?>
+                    <a class="wu-tile wu-t-autor" href="buscar.php?q=<?= urlencode($wuAutorTop) ?>">
+                <?php else: ?>
+                    <div class="wu-tile wu-t-autor">
+                <?php endif; ?>
+                    <small>Autor del año</small>
+                    <strong><?= $wuAutorTop ? e($wuAutorTop) : '—' ?></strong>
+                    <?php if ($wuAutorTop): ?>
+                        <em><?= $wuAutorTopNum > 1 ? $wuAutorTopNum . ' libros suyos' : 'Ninguno se repite' ?></em>
+                    <?php endif; ?>
+                <?= $wuAutorTop ? '</a>' : '</div>' ?>
 
+                <!-- Mes estrella -->
+                <div class="wu-tile wu-t-mes">
+                    <small>Mes estrella</small>
+                    <strong><?= $wuMesTop ? ucfirst($mesesNombre[$wuMesTop]) : '—' ?></strong>
+                    <?php if ($wuMesTop): ?><em><?= $wuMesTopNum ?> <?= $wuMesTopNum === 1 ? 'libro terminado' : 'libros terminados' ?></em><?php endif; ?>
                 </div>
 
-                <button type="button" class="wu-flecha wu-prev" aria-label="Anterior" hidden>‹</button>
-                <button type="button" class="wu-flecha wu-next" aria-label="Siguiente">›</button>
-                <div class="wu-dots" role="tablist"></div>
+                <!-- Día favorito -->
+                <div class="wu-tile wu-t-dia">
+                    <small>Terminas más</small>
+                    <strong><?= $wuDiaTop ? 'Los ' . $diasPlural[$wuDiaTop] : '—' ?></strong>
+                    <?php if ($wuDiaTop): ?><em><?= $wuDiaTopNum ?> <?= $wuDiaTopNum === 1 ? 'libro' : 'libros' ?></em><?php endif; ?>
+                </div>
+
+                <!-- Mejor racha -->
+                <div class="wu-tile wu-t-racha">
+                    <small>Mejor racha</small>
+                    <strong><?= $wuRachaMax ?> <?= $wuRachaMax === 1 ? 'mes seguido' : 'meses seguidos' ?></strong>
+                    <?php if ($wuRachaMax > 0): ?>
+                        <em><?= $wuRachaIni === $wuRachaFin ? ucfirst($mesesNombre[$wuRachaIni]) : 'de ' . $mesesNombre[$wuRachaIni] . ' a ' . $mesesNombre[$wuRachaFin] ?></em>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="wu-pie">
+                <button type="button" class="wu-copiar js-wu-copiar" data-texto="<?= e($wuTextoCompartir) ?>">📋 Copiar mi resumen</button>
             </div>
         <?php endif; ?>
     </div>
@@ -496,12 +496,25 @@ if (!function_exists('e')) {
 
     <!-- La comunidad está leyendo -->
     <div class="panel" style="margin-top: 25px;">
-        <div class="panel-header">
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h2>👥 La comunidad está leyendo</h2>
+            <a href="comunidad.php" style="font-size: 0.88rem; font-weight: bold; text-decoration: none;">Ver comunidad →</a>
         </div>
-        <p style="color: #777; margin-top: 10px; font-size: 0.9rem;">
-            Próximamente podrás ver en tiempo real las lecturas de otros usuarios.
-        </p>
+
+        <?php if (!empty($amigosLeyendo)): ?>
+            <div class="cm-scroll">
+                <?php foreach ($amigosLeyendo as $l) echo cmTarjetaLeyendo($l); ?>
+            </div>
+        <?php elseif ($siguiendoN > 0): ?>
+            <p style="color: #777; margin-top: 10px; font-size: 0.9rem;">
+                Ninguna de las personas que sigues está leyendo ahora mismo.
+            </p>
+        <?php else: ?>
+            <p style="color: #777; margin-top: 10px; font-size: 0.9rem;">
+                Sigue a otros lectores para ver aquí qué están leyendo.
+            </p>
+            <a href="comunidad.php" class="btn-Reads-continue">Encontrar lectores</a>
+        <?php endif; ?>
     </div>
 
     <!-- Resumen de lectura -->
@@ -597,6 +610,7 @@ if (!function_exists('e')) {
             <span>Mi estantería</span>
         </a>
 
+
         <a href="estadisticas.php" class="nav-card-float">
             <span class="nav-icon">📊</span>
             <span>Estadísticas</span>
@@ -612,6 +626,12 @@ if (!function_exists('e')) {
             <span>Buscar</span>
         </a>
 
+          <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
+
+    
         <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
@@ -619,6 +639,8 @@ if (!function_exists('e')) {
     </nav>
 </div>
 
+<!-- Recuadro para actualizar el progreso sin salir del inicio -->
+<?php include __DIR__ . '/progreso_modal.php'; ?>
 
 <script>
 const input = document.querySelector('input[name="q"]');
@@ -720,8 +742,12 @@ async function cargarRecomendaciones() {
             const autor = libro.autor || 'Autor desconocido';
             const portadaFinal = libro.portada ? libro.portada : generarPortadaSVG(titulo);
 
+            const enlace = libro.url
+                ? libro.url + '&rec=1'
+                : `libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada || '')}`;
+
             const html = `
-                <a href="libro.php?id=${encodeURIComponent(libro.id)}&portada=${encodeURIComponent(libro.portada || '')}" class="book-card-scroll" title="${escapeHtml(titulo)}">
+                <a href="${escapeHtml(enlace)}" class="book-card-scroll" title="${escapeHtml(titulo)}">
                     <div style="width:110px; height:155px; position:relative; overflow:hidden; border-radius:8px; background:#1e293b;">
                         <img src="${escapeHtml(portadaFinal)}" alt="${escapeHtml(titulo)}" style="width:100%; height:100%; object-fit:cover;" onerror="this.closest('a').remove()">
                     </div>
@@ -738,69 +764,20 @@ async function cargarRecomendaciones() {
     }
 }
 
-// Wrap Up
+// Wrap Up: botón de copiar el resumen
 function iniciarWrapUp() {
-    const visor = document.querySelector('.wu-visor');
-    if (!visor) return;
-
-    const track  = visor.querySelector('.wu-track');
-    const slides = Array.from(track.children);
-    const prev   = visor.querySelector('.wu-prev');
-    const next   = visor.querySelector('.wu-next');
-    const dotsBox = visor.querySelector('.wu-dots');
-    let actual = 0;
-
-    const dots = slides.map((_, i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.setAttribute('aria-label', 'Ir a la diapositiva ' + (i + 1));
-        b.addEventListener('click', () => ir(i));
-        dotsBox.appendChild(b);
-        return b;
-    });
-
-    function marcar(i) {
-        actual = i;
-        dots.forEach((d, n) => d.classList.toggle('activo', n === i));
-        prev.hidden = (i === 0);
-        next.hidden = (i === slides.length - 1);
-    }
-
-    function ir(i) {
-        i = Math.max(0, Math.min(slides.length - 1, i));
-        track.scrollTo({ left: i * track.clientWidth, behavior: 'smooth' });
-        marcar(i);
-    }
-
-    track.addEventListener('scroll', () => {
-        const i = Math.round(track.scrollLeft / track.clientWidth);
-        if (i !== actual) marcar(i);
-    }, { passive: true });
-
-    prev.addEventListener('click', () => ir(actual - 1));
-    next.addEventListener('click', () => ir(actual + 1));
-
-    visor.tabIndex = 0;
-    visor.addEventListener('keydown', e => {
-        if (e.key === 'ArrowRight') ir(actual + 1);
-        if (e.key === 'ArrowLeft')  ir(actual - 1);
-    });
-
-    marcar(0);
-
-    const copiar = document.getElementById('wu-copiar');
-    if (copiar) {
-        copiar.addEventListener('click', async () => {
-            const original = copiar.textContent;
+    document.querySelectorAll('.js-wu-copiar').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const original = btn.textContent;
             try {
-                await navigator.clipboard.writeText(copiar.dataset.texto);
-                copiar.textContent = '✅ ¡Copiado!';
+                await navigator.clipboard.writeText(btn.dataset.texto);
+                btn.textContent = '✅ ¡Copiado!';
             } catch (err) {
-                copiar.textContent = '⚠️ No se pudo copiar';
+                btn.textContent = '⚠️ No se pudo copiar';
             }
-            setTimeout(() => copiar.textContent = original, 1800);
+            setTimeout(() => btn.textContent = original, 1800);
         });
-    }
+    });
 }
 
 // Inicializar funciones al cargar la página
@@ -809,5 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iniciarWrapUp();
 });
 </script>
+
+   <script src="/Reads/public/portadas_cola.js" defer></script>
 </body>
 </html>

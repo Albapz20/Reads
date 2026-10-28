@@ -14,13 +14,14 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 
 $libroId   = trim($_POST["libro_id"] ?? "");
 $contenido = $_POST["contenido"] ?? "";
+$spoiler = isset($_POST["spoiler_check"]) ? (isset($_POST["spoiler"]) ? 1 : 0) : null;
 
 // Solo se permite volver a estas dos páginas
 $destino = (($_POST["volver"] ?? "") === "perfil")
     ? "perfil.php"
     : "libro.php?id=" . urlencode($libroId);
 
-$resultado = $reviewService->guardarReseña($usuario["id"], $libroId, $contenido);
+$resultado = $reviewService->guardarReseña($usuario["id"], $libroId, $contenido, $spoiler);
 
 if ($resultado === true) {
     header("Location: " . $destino);

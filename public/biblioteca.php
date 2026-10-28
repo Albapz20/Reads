@@ -341,6 +341,11 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
             <span>Buscar</span>
         </a>
 
+        <a href="comunidad.php" class="nav-card-float">
+            <span class="nav-icon">👥</span>
+            <span>Comunidad</span>
+        </a>
+
         <a href="ajustes.php" class="nav-card-float">
             <span class="nav-icon">⚙️</span>
             <span>Ajustes</span>
@@ -599,6 +604,6 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 })();
 <?php endif; ?>
 </script>
-
+   <script src="/Reads/public/portadas_cola.js" defer></script>
 </body>
 </html>
