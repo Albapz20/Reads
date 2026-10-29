@@ -89,7 +89,7 @@ $proveedor = "google_books";
 
 // Tratamiento de datos según la fuente
 if (isset($libroAPI["volumeInfo"])) {
-    // ---- GOOGLE BOOKS ----
+    //  GOOGLE BOOKS 
     $info = $libroAPI["volumeInfo"];
     $titulo = $info["title"] ?? "Sin título";
     $autor = isset($info["authors"]) ? implode(", ", $info["authors"]) : "Autor desconocido";
@@ -105,9 +105,9 @@ if (isset($libroAPI["volumeInfo"])) {
 
     $descripcion = $info["description"] ?? "Sin descripción disponible.";
     $idioma = $info["language"] ?? "";
-   $paginasTotalesAPI = (int)($info["pageCount"] ?? 0) ?: (int)($info["printedPageCount"] ?? 0);
+    $paginasTotalesAPI = (int)($info["pageCount"] ?? 0);
 } else {
-    // ---- OPEN LIBRARY ----
+    //  OPEN LIBRARY 
     $proveedor = "open_library";
     $titulo = $libroAPI["title"] ?? "Sin título";
 
@@ -133,12 +133,10 @@ if (isset($libroAPI["volumeInfo"])) {
     $paginasTotalesAPI = (int)($libroAPI["number_of_pages"] ?? 0);
 }
 
-// La descripción puede venir como array en Open Library
 if (is_array($descripcion)) {
     $descripcion = $descripcion["value"] ?? "Sin descripción disponible.";
 }
 
-// Prioridad: si viene por URL
 if (!empty($descripcionURL)) {
     $descripcion = $descripcionURL;
 }
@@ -172,9 +170,8 @@ $sinDesc = function ($d) {
 
 if (session_status() === PHP_SESSION_NONE) @session_start();
 $claveFallo = 'desc_fail_' . md5($id_externo . '|' . $titulo);
-// Si ya falló hace menos de 6 h, no repetir las búsquedas externas
+// Si ya falló hace menos de 6 h, no repetir las búsquedas externas (con ?debug sí se repiten)
 $saltarRescates = !isset($_GET['debug']) && isset($_SESSION[$claveFallo]) && (time() - $_SESSION[$claveFallo]) < 6 * 3600;
-
 $apiKey = (string)config('google_books_key', '');
 
 // Si la API no trae descripción, buscarla en la tabla libros y en listas_lectura
@@ -290,13 +287,13 @@ if (!$saltarRescates && $sinDesc($descripcion)) {
     }
 }
 
-// Apple Books (API de iTunes, sin clave): suele tener descripciones de ediciones en español
+// Apple Books 
 if (!$saltarRescates && $sinDesc($descripcion)) {
     $tAB = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
     $autorAB = ($autor !== "Autor desconocido") ? trim(explode(',', $autor)[0]) : '';
     $apellidoAB = mb_strtolower(trim((string)array_slice(explode(' ', $autorAB), -1)[0]), 'UTF-8');
 
-    $peticiones = [];   // [url, es_busqueda_por_isbn]
+    $peticiones = [];   
     if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo)) {
         foreach (['es', 'us'] as $pais) {
             $peticiones[] = ["https://itunes.apple.com/lookup?isbn=" . urlencode($id_externo) . "&country=$pais", true];
@@ -346,7 +343,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
     };
     $autorNorm = $clave(trim(explode(',', $autor)[0]));
 
-    // Páginas de referencia (para descartar libros distintos del mismo autor)
+    // Páginas de referencia 
     $pagsRef = (int)$paginasTotalesAPI;
     try {
         $stP = $db->pdo->prepare("SELECT paginas_totales FROM listas_lectura WHERE libro_id = ? OR titulo = ? LIMIT 1");
@@ -363,7 +360,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
     foreach ($resA['items'] ?? [] as $itA) {
         $vi = $itA['volumeInfo'] ?? [];
         if (empty($vi['description'])) continue;
-        // el autor debe coincidir exactamente (evita "Ana Garriga Domínguez" frente a "Ana Garriga")
+        // el autor debe coincidir exactamente
         if (!in_array($autorNorm, array_map($clave, $vi['authors'] ?? []), true)) continue;
         $pc = (int)($vi['pageCount'] ?? 0);
         $kB = $base((string)($vi['title'] ?? ''));
@@ -387,7 +384,7 @@ if (!$saltarRescates && $sinDesc($descripcion) && $autor !== "Autor desconocido"
             'author' => $autorNorm, 'limit' => 20,
             'fields' => 'key,title,author_name,number_of_pages_median',
         ]));
-        $obras = [];   
+        $obras = [];   // título base => clave de la obra
         $obrasCerca = [];
         foreach ($resO['docs'] ?? [] as $dO) {
             if (!in_array($autorNorm, array_map($clave, $dO['author_name'] ?? []), true)) continue;
@@ -423,10 +420,11 @@ if (empty(trim($descripcion))) {
     $descripcion = "Sin descripción disponible.";
 }
 if ($sinDesc($descripcion)) {
-    $_SESSION[$claveFallo] = time();   
+    $_SESSION[$claveFallo] = time();   // recordar el fallo para no repetir las búsquedas
 }
 
-// Descripción siempre en español: si está en inglés se traduce 
+// Descripción siempre en español: si está en inglés se traduce (y la traducción queda guardada)
+$descTraducida = false;
 if (!$sinDesc($descripcion) && Traductor::esIngles((string)$descripcion)) {
     $claveTrad = 'trad_fail_' . md5((string)$descripcion);
     $tradFalloReciente = isset($_SESSION[$claveTrad]) && (time() - $_SESSION[$claveTrad]) < 3600;
@@ -450,7 +448,7 @@ if (!$sinDesc($descripcion) && Traductor::esIngles((string)$descripcion)) {
             }
         } else {
             $descLog['traduccion'] = 'no se pudo traducir (¿falta deepl_key o se agotó el límite?)';
-            $_SESSION[$claveTrad] = time();   // no insistir durante una hora
+            $_SESSION[$claveTrad] = time();  
         }
     }
 }
@@ -469,7 +467,7 @@ if (strpos($portada, 'placehold.co') !== false) {
         if ($cov) {
             $portada = $cov['url'];
         } else {
-            $_SESSION[$claveCov] = time();   
+            $_SESSION[$claveCov] = time();   // no repetir la búsqueda en cada visita
         }
     }
 }
@@ -499,7 +497,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     if ($registro) {
         $listaService->cambiarEstado($authUser["id"], $registro["id"], $estado);
 
-        // Páginas: se conserva el progreso ya guardado (antes se ponía a 0 al cambiar de estado)
+        // Páginas: se conserva el progreso ya guardado 
         $stPag = $db->pdo->prepare("SELECT paginas_totales, paginas_leidas FROM listas_lectura WHERE id = ? AND usuario_id = ?");
         $stPag->execute([$registro["id"], $authUser["id"]]);
         $actPag = $stPag->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -518,7 +516,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
             $listaService->actualizarPaginas($authUser["id"], $registro["id"], $pagTotales, min($pagLeidas, $pagTotales));
         }
 
-        // Detectar el género automáticamente al guardar el libro 
+        // Detectar el género automáticamente al guardar el libro
         try {
             $colGen = columnaGeneros($db->pdo);
             if ($colGen !== null) {
@@ -531,7 +529,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     // Mensaje de confirmación que se mostrará al recargar la ficha
     $_SESSION['libro_msg'] = "Libro guardado como «" . ($estados[$estado][1] ?? $estado) . "».";
 
-    // Volver a la ficha del libro (así se puede puntuar y reseñar justo después)
+    // Volver a la ficha del libro
     $volver = basename($_SERVER['SCRIPT_NAME']) . "?id=" . urlencode((string)$id_externo);
     if (!empty($descripcionURL)) {
         $volver .= "&desc=" . urlencode($descripcionURL);
@@ -540,7 +538,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && !empty($_POST["accion"]) && $authUs
     exit;
 }
 
-// Datos del usuario sobre este libro 
+// Datos del usuario sobre este libro
 $estadoActual = null;
 $libroUser = null;
 $puntuacionUsuario = null;
@@ -621,6 +619,7 @@ $amigosConLibro = $authUser
 
 // Tablero de vibes y fanarts
 $vibesService = new VibesService($db->pdo);
+// Primera visita: rellenar con fanarts de DeviantArt y Tumblr. Solo para usuarios con sesión.
 if ($authUser) {
     $vibesService->autocompletar(
         (string)$id_externo,
@@ -629,7 +628,7 @@ if ($authUser) {
         preg_match('/^(\d{9}[\dXx]|\d{13})$/', (string)$id_externo) ? (string)$id_externo : '',
         (string)$descripcion
     );
-    $descLog['deviantart'] = $vibesService->estado ?? 'FALTA actualizar src/VibesService.php (no tiene la propiedad estado)';   // se ve con ?debug
+    $descLog['deviantart'] = $vibesService->estado ?? 'FALTA actualizar src/VibesService.php (no tiene la propiedad estado)';  
 }
 $vibes = $vibesService->listar((string)$id_externo);
 $vibesPines    = array_values(array_filter($vibes, fn($v) => ($v['tipo'] ?? 'imagen') === 'pin'));
@@ -645,6 +644,7 @@ $descLog['vibes_en_bd'] = count($vibes) . ' imágenes' . (isset($vibes[0])
 $vibesMsg = $_SESSION['vibes_msg'] ?? null;
 unset($_SESSION['vibes_msg']);
 
+// Mensaje de confirmación al guardar el estado del libro
 $libroMsg = $_SESSION['libro_msg'] ?? null;
 unset($_SESSION['libro_msg']);
 
@@ -653,6 +653,7 @@ if (empty($_SESSION['csrf_vibes'])) {
 }
 $csrfVibes = $_SESSION['csrf_vibes'];
 
+// Token para el recuadro de progreso
 if (empty($_SESSION['csrf_progreso'])) {
     $_SESSION['csrf_progreso'] = bin2hex(random_bytes(16));
 }
@@ -767,9 +768,10 @@ $qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
             </section>
 
             <!-- Vibes y fanarts -->
-            <section class="lb-card" id="vibes">
+            <section class="lb-card<?= empty($vibes) && !$vibesMsg ? ' vb-vacia' : '' ?>" id="vibes">
                 <div class="vb-head">
                     <h2>🎨 Vibes y fanarts</h2>
+                    <?php if (empty($vibes)): ?><span class="vb-aviso">Todavía sin imágenes</span><?php endif; ?>
                     <div class="vb-buscar">
                         <span>Buscar inspiración:</span>
                         <a href="https://www.pinterest.com/search/pins/?q=<?= $qFanart ?>" target="_blank" rel="noopener">Pinterest</a>

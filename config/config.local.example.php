@@ -1,13 +1,18 @@
 <?php
 
 return [
-    'db_host' => 'localhost',
-    'db_name' => 'Reads',
-    'db_user' => 'root',
+    'db_host' => '',
+    'db_name' => '',
+    'db_user' => '',
     'db_pass' => '',
     'google_books_key' => '',
-    'deepl_key'      => '',
+    'smtp_usuario'  => '',
+    'smtp_password' => '',   
+    'deepl_key' => '',
     'deviantart_id'     => '',
     'deviantart_secret' => '',
-    'tumblr_key' => '',
+    'admin_ids' => [1],
+  // o, si prefieres: 'admin_emails' => ['tu@correo.com'],
+  'tumblr_key' => '',
+  
 ];

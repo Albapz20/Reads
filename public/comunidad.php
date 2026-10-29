@@ -27,7 +27,7 @@ $ver = $_GET['ver'] ?? 'inicio';
 if (!in_array($ver, ['inicio', 'actividad', 'siguiendo', 'seguidores'], true)) $ver = 'inicio';
 
 $filtro = $_GET['filtro'] ?? 'todo';
-$filtros = ['todo' => 'Todo', 'terminados' => '✅ Terminados', 'leyendo' => '📖 Leyendo', 'quieren' => '🎯 Quieren leer'];
+$filtros = ['todo' => 'Todo', 'terminados' => ' Terminados', 'leyendo' => ' Leyendo', 'quieren' => ' Quieren leer'];
 if (!isset($filtros[$filtro])) $filtro = 'todo';
 
 $cont = $com->contadores($yo);
@@ -64,7 +64,7 @@ if ($q === '') {
 
     <!-- Cabecera y buscador de lectores -->
     <section class="bs-hero">
-        <h1>👥 Comunidad</h1>
+        <h1> Comunidad</h1>
         <p>Encuentra a otros lectores, síguelos y descubre qué están leyendo.</p>
 
         <form method="GET" action="comunidad.php" class="bs-form">
@@ -77,8 +77,8 @@ if ($q === '') {
         </form>
 
         <div class="cm-pestanas">
-            <a class="bs-chip" style="<?= ($ver === 'inicio' && $q === '') ? 'font-weight:700;' : '' ?>" href="comunidad.php">🏠 Inicio</a>
-            <a class="bs-chip" style="<?= $ver === 'actividad' && $q === '' ? 'font-weight:700;' : '' ?>" href="comunidad.php?ver=actividad">🕘 Actividad</a>
+            <a class="bs-chip" style="<?= ($ver === 'inicio' && $q === '') ? 'font-weight:700;' : '' ?>" href="comunidad.php"> Inicio</a>
+            <a class="bs-chip" style="<?= $ver === 'actividad' && $q === '' ? 'font-weight:700;' : '' ?>" href="comunidad.php?ver=actividad"> Actividad</a>
             <a class="bs-chip" style="<?= $ver === 'siguiendo' ? 'font-weight:700;' : '' ?>" href="comunidad.php?ver=siguiendo">Siguiendo (<?= $cont['siguiendo'] ?>)</a>
             <a class="bs-chip" style="<?= $ver === 'seguidores' ? 'font-weight:700;' : '' ?>" href="comunidad.php?ver=seguidores">Seguidores (<?= $cont['seguidores'] ?>)</a>
         </div>
@@ -104,7 +104,7 @@ if ($q === '') {
 
         <!-- Actividad completa, con filtros -->
         <section class="bs-card">
-            <h2>🕘 Actividad de tus amigos</h2>
+            <h2> Actividad de tus amigos</h2>
             <div class="cm-pestanas">
                 <?php foreach ($filtros as $cod => $etq): ?>
                     <a class="bs-chip" style="<?= $filtro === $cod ? 'font-weight:700;' : '' ?>"
@@ -147,7 +147,7 @@ if ($q === '') {
 
         <!-- Leyendo ahora -->
         <section class="bs-card">
-            <h2>📖 Tus amigos están leyendo</h2>
+            <h2> Tus amigos están leyendo</h2>
             <?php if (!empty($leyendo)): ?>
                 <div class="cm-scroll">
                     <?php foreach ($leyendo as $l) echo cmTarjetaLeyendo($l); ?>
@@ -161,7 +161,7 @@ if ($q === '') {
 
         <!-- Actividad reciente (resumen) -->
         <section class="bs-card">
-            <h2>🕘 Actividad reciente</h2>
+            <h2> Actividad reciente</h2>
             <?php if (empty($grupos)): ?>
                 <p class="cm-vacio">Aquí aparecerá lo último que añadan o terminen las personas a las que sigues.</p>
             <?php else: ?>
@@ -174,7 +174,7 @@ if ($q === '') {
 
         <!-- Lectores sugeridos -->
         <section class="bs-card">
-            <h2>✨ Lectores que quizá te interesen</h2>
+            <h2> Lectores que quizá te interesen</h2>
             <?php if (empty($sugeridos)): ?>
                 <p class="cm-vacio">Aún no hay sugerencias. Cuando haya más lectores en la comunidad aparecerán aquí.</p>
             <?php else: ?>

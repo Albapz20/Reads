@@ -12,8 +12,6 @@ if (!$usuario) {
     header("Location: login.php");
     exit;
 }
-if (session_status() === PHP_SESSION_NONE) @session_start();
-
 $userService    = new UserService();
 $listaService   = new ListaService();
 $ajustesService = new AjustesService();
@@ -185,6 +183,12 @@ $urlDeseosPublica = $protocolo . "://" . $_SERVER['HTTP_HOST'] . "/Reads/vistas/
 $urlQR = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" . urlencode($urlDeseosPublica);
 $textoWhatsApp = urlencode("¡Hola! Te comparto mi wishlist de libros para que veas cuáles me gustaría leer: " . $urlDeseosPublica);
 
+// ¿El libro todavía no tiene una portada real?
+function esGenericaPortada(string $p): bool {
+    $p = trim($p);
+    return $p === '' || stripos($p, 'default') !== false || stripos($p, 'placehold') !== false;
+}
+
 // Texto de estrellas (admite medias)
 function estrellasTexto(float $v): string {
     if ($v <= 0) return '';
@@ -238,6 +242,7 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
     $tituloEscapado     = htmlspecialchars($libro["titulo"], ENT_QUOTES);
     $autorEscapado      = htmlspecialchars($libro["autores"] ?? "", ENT_QUOTES);
     $portada            = htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg', ENT_QUOTES);
+    $sinPortada         = esGenericaPortada((string)($libro["portada"] ?? ''));
     $buscar             = htmlspecialchars(mb_strtolower(($libro["titulo"] ?? '') . ' ' . ($libro["autores"] ?? ''), 'UTF-8'), ENT_QUOTES);
     $placeholder        = 'https://placehold.co/350x500/e2e8f0/1e293b?text=Sin+Portada';
 
@@ -257,8 +262,12 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
              data-orden="<?= $orden ?>" data-buscar="<?= $buscar ?>"
              data-titulo="<?= $tituloEscapado ?>" data-autor="<?= $autorEscapado ?>"
              data-estrellas="<?= $estrellasActuales ?>" data-progreso="<?= $progreso ?>">
-        <div class="libro-portada">
-            <img src="<?= $portada ?>" alt="" loading="lazy" onerror="this.onerror=null;this.src='<?= $placeholder ?>';">
+        <div class="libro-portada" data-portada-id="<?= (int)$libro['id'] ?>">
+            <?php if ($sinPortada): ?>
+                <div class="portada-generada"><strong><?= $tituloEscapado ?></strong><small><?= $autorEscapado ?></small></div>
+            <?php else: ?>
+                <img src="<?= $portada ?>" alt="" loading="lazy" onerror="portadaRota(this)">
+            <?php endif; ?>
             <?php if ($chip !== ''): ?><span class="libro-chip"><?= htmlspecialchars($chip) ?></span><?php endif; ?>
         </div>
         <div class="libro-meta">
@@ -303,9 +312,9 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                 <div class="seccion-secundaria-item">
                     <p style="margin: 0 0 8px 0; font-size: 0.85rem; font-weight: 700;">🛒 Opciones para comprar o regalar:</p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <a href="<?= $urlCasaLibro ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">📗 La Casa del Libro</a>
-                        <a href="<?= $urlAmazon ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">📙 Amazon</a>
-                        <a href="<?= $urlFnac ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">📘 Fnac</a>
+                        <a href="<?= $urlCasaLibro ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> La Casa del Libro</a>
+                        <a href="<?= $urlAmazon ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> Amazon</a>
+                        <a href="<?= $urlFnac ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> Fnac</a>
                     </div>
                 </div>
             <?php else: ?>
@@ -333,12 +342,12 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                         <input type="hidden" name="libro_id" value="<?= $libro['id'] ?>">
 
                         <label style="font-size: 0.88rem; font-weight: 600;">
-                            📅 Inicio:
+                             Inicio:
                             <input type="date" name="fecha_inicio" value="<?= htmlspecialchars($libro['fecha_inicio'] ?? '') ?>" class="input-select">
                         </label>
 
                         <label style="font-size: 0.88rem; font-weight: 600;">
-                            🏁 Fin:
+                             Fin:
                             <input type="date" name="fecha_fin" value="<?= htmlspecialchars($libro['fecha_fin'] ?? '') ?>" class="input-select">
                         </label>
 
@@ -394,7 +403,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
             <div class="share-card-box">
                 <img src="<?= $urlQR ?>" alt="Código QR Wishlist" class="qr-img">
                 <div style="flex: 1; min-width: 200px;">
-                    <h4 style="margin: 0 0 4px 0; font-size: 1.05rem;">🎁 Compartir mi Wishlist</h4>
+                    <h4 style="margin: 0 0 4px 0; font-size: 1.05rem;"> Compartir mi Wishlist</h4>
                     <p style="margin: 0 0 10px 0; font-size: 0.85rem; opacity: 0.8;">Muestra este código QR o comparte tu enlace directo para que sepan qué libros regalarte.</p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <a href="https://api.whatsapp.com/send?text=<?= $textoWhatsApp ?>" target="_blank" rel="noopener noreferrer" class="btn-ws-icon" title="Compartir por WhatsApp">
@@ -443,22 +452,35 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
-    <link rel="stylesheet" href="/Reads/public/css/comunidad.css?v=<?= @filemtime(__DIR__ . '/css/comunidad.css') ?>">
     <script src="/Reads/public/main.js"></script>
     <title>Mi perfil</title>
-
+    <script>
+    // Si una imagen de portada no carga, se muestra una portada generada con el título y el autor
+    function portadaRota(img) {
+        const card = img.closest('.libro-card');
+        if (!card) return;
+        const d = document.createElement('div');
+        d.className = 'portada-generada';
+        const t = document.createElement('strong');
+        t.textContent = card.dataset.titulo || '';
+        const a = document.createElement('small');
+        a.textContent = card.dataset.autor || '';
+        d.append(t, a);
+        img.replaceWith(d);
+    }
+    </script>
 </head>
- <body class="page-perfil">
+<body class="page-perfil">
 
 <div class="container">
 
-    <?php if ($avatarMsg): ?>
+        <?php if ($avatarMsg): ?>
         <div class="perfil-card avatar-aviso <?= $avatarMsg['tipo'] === 'error' ? 'error' : '' ?>">
             <?= $avatarMsg['tipo'] === 'ok' ? '✅' : '⚠️' ?> <?= htmlspecialchars($avatarMsg['texto']) ?>
         </div>
     <?php endif; ?>
 
-    <!-- Banner de perfil -->
+      <!-- Banner de perfil -->
     <div class="perfil-card perfil-banner-container con-banda">
         <div class="pf-banner" style="background: <?= htmlspecialchars($gradienteBanda) ?>;"></div>
 
@@ -489,25 +511,25 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <div class="perfil-card perfil-listas-card">
 
         <div class="perfil-card-header">
-            <h2 class="perfil-card-titulo">📚 Mis lecturas</h2>
+            <h2 class="perfil-card-titulo"> Mis lecturas</h2>
 
             <button type="button" class="wishlist-btn-destacado" data-tab="guardados">
-                🎁 Wishlist <span class="wishlist-count"><?= count($guardados) ?></span>
+                 Wishlist <span class="wishlist-count"><?= count($guardados) ?></span>
             </button>
         </div>
 
         <div class="tabs-listas">
             <button type="button" class="tab-btn active" data-tab="tbr">
-                🎯 TBR <span class="tab-count"><?= count($tbr) ?></span>
+                 TBR <span class="tab-count"><?= count($tbr) ?></span>
             </button>
             <button type="button" class="tab-btn" data-tab="leyendo">
-                📖 Leyendo <span class="tab-count"><?= count($leyendo) ?></span>
+                 Leyendo <span class="tab-count"><?= count($leyendo) ?></span>
             </button>
             <button type="button" class="tab-btn" data-tab="leidos">
-                ✅ Leídos <span class="tab-count"><?= count($leidos) ?></span>
+                 Leídos <span class="tab-count"><?= count($leidos) ?></span>
             </button>
             <button type="button" class="tab-btn" data-tab="abandonados">
-                ❌ Abandonados <span class="tab-count"><?= count($abandonados) ?></span>
+                 Abandonados <span class="tab-count"><?= count($abandonados) ?></span>
             </button>
         </div>
 
@@ -528,7 +550,6 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
     <button type="button" class="modal-cerrar" id="modalCerrar" aria-label="Cerrar">✕</button>
     <div class="modal-cuerpo" id="modalCuerpo"></div>
 </dialog>
-
 <!-- Modal: cambiar imagen de perfil -->
 <dialog id="modalAvatar" class="modal-libro" aria-label="Cambiar imagen de perfil">
     <button type="button" class="modal-cerrar" id="cerrarAvatar" aria-label="Cerrar">✕</button>
@@ -583,49 +604,16 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-
-        <a href="index.php" class="nav-card-float">
-            <span class="nav-icon">🏠</span>
-            <span>Inicio</span>
-        </a>
-
-        <a href="perfil.php" class="nav-card-float active">
-            <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
-        </a>
-
-        <a href="biblioteca.php" class="nav-card-float">
-            <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
-        </a>
-
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        </a>
-
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>
-        </a>
-
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
-
-        <a href="comunidad.php" class="nav-card-float">
-            <span class="nav-icon">👥</span>
-            <span>Comunidad</span>
-        </a>
-
-        <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
-        </a>
+        <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
+        <a href="perfil.php" class="nav-card-float active"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
+        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
+        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
+        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
+        <a href="comunidad.php" class="nav-card-float"><span class="nav-icon">👥</span><span>Comunidad</span></a>
+        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
     </nav>
 </div>
-
 
 <script>
 const LIBROS_POR_PAGINA = 24;
@@ -735,7 +723,7 @@ modal.addEventListener('close', () => {
     document.body.classList.remove('modal-open');
 });
 
-/*  Imagen de perfil  */
+/* ---------- Imagen de perfil ---------- */
 const modalAvatar = document.getElementById('modalAvatar');
 document.getElementById('abrirAvatar').addEventListener('click', () => {
     modalAvatar.showModal();
@@ -780,11 +768,10 @@ function copiarEnlace(url) {
     });
 }
 
-/* Recuerda la última pestaña  */
+/* Recuerda la última pestaña (útil al volver tras guardar un cambio) */
 let pestanaGuardada = 'tbr';
 try { pestanaGuardada = localStorage.getItem('perfilTab') || 'tbr'; } catch (e) {}
 abrirPestana(pestanaGuardada);
 </script>
-   <script src="/Reads/public/portadas_cola.js" defer></script>
 </body>
 </html>

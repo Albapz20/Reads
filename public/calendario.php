@@ -242,13 +242,13 @@ function textoCuentaAtras(string $fecha): string {
 <div class="cal-wrap">
 
     <header class="cal-header">
-        <h1>📅 Calendario de Lectura</h1>
+        <h1>Calendario de Lectura</h1>
         <p>Pulsa cualquier día para ver lo que pasó en él y anotar tus páginas.</p>
     </header>
 
     <!-- Resumen del mes -->
     <section class="cal-kpis">
-        <div class="cal-kpi"><span class="valor">🔥 <?= $racha ?></span><span class="etiqueta">Racha actual (<?= $racha === 1 ? 'día' : 'días' ?>)</span></div>
+        <div class="cal-kpi"><span class="valor"><?= $racha ?></span><span class="etiqueta">Racha actual (<?= $racha === 1 ? 'día' : 'días' ?>)</span></div>
         <div class="cal-kpi"><span class="valor"><?= $diasLeyendo ?></span><span class="etiqueta">Días leyendo en <?= strtolower($mesesEs[$mesActual]) ?></span></div>
         <div class="cal-kpi"><span class="valor"><?= $terminadosMes ?></span><span class="etiqueta"><?= $terminadosMes === 1 ? 'Libro terminado' : 'Libros terminados' ?></span></div>
         <div class="cal-kpi"><span class="valor"><?= $empezadosMes ?></span><span class="etiqueta"><?= $empezadosMes === 1 ? 'Libro empezado' : 'Libros empezados' ?></span></div>
@@ -312,7 +312,7 @@ function textoCuentaAtras(string $fecha): string {
         <!-- Barra lateral -->
         <aside class="cal-side">
             <section class="cal-card">
-                <h2>📣 Próximos lanzamientos</h2>
+                <h2> Próximos lanzamientos</h2>
                 <?php if (empty($proximos)): ?>
                     <p class="vacio">Aún no tienes lanzamientos guardados.</p>
                 <?php else: foreach ($proximos as $p): ?>
@@ -328,7 +328,7 @@ function textoCuentaAtras(string $fecha): string {
             </section>
 
             <details class="cal-card form-lanzamiento">
-                <summary>🚀 Recordar un lanzamiento</summary>
+                <summary> Recordar un lanzamiento</summary>
                 <form method="POST">
                     <input type="hidden" name="accion" value="nuevo_lanzamiento">
                     <input class="cal-input" type="text" name="titulo" placeholder="Título del libro *" required>

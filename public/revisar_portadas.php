@@ -180,6 +180,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'aplic
     exit;
 }
 
+/*  Quitar las portadas falsas (imagen de relleno repetida)  */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'quitar_falsas') {
+    $grupos = $_SESSION['rev_falsas'] ?? [];
+    $quitadas = 0;
+
+    foreach (array_keys($_POST['grupo'] ?? []) as $g) {
+        $g = (int)$g;
+        if (!isset($grupos[$g])) continue;
+
+        PortadasVerificadas::registrarPlaceholder($grupos[$g]['hash']);   // no se vuelve a aceptar esa imagen
+        foreach ($grupos[$g]['libros'] as $b) {
+            $db->pdo->prepare("UPDATE listas_lectura SET portada = ? WHERE id = ? AND usuario_id = ?")
+                    ->execute([PORTADA_DEFECTO, (int)$b['id'], $uid]);
+            borrarArchivoLocal((string)$b['portada']);
+            $quitadas++;
+        }
+    }
+    // Para que la cola de portadas los vuelva a intentar
+    unset($_SESSION['rev_falsas'], $_SESSION['cola_directo'], $_SESSION['cola_fallidas'], $_SESSION['cola_pausa_hasta']);
+
+    $_SESSION['rev_mensaje'] = "Quité $quitadas portadas falsas. La cola las buscará de nuevo en segundo plano (entra en tu perfil y espera un momento).";
+    header("Location: revisar_portadas.php?paso=resultados");
+    exit;
+}
+
 /*  Poner una portada elegida a mano  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'poner_portada') {
     $id = (int)($_POST['id'] ?? 0);
@@ -338,6 +363,33 @@ if ($paso === 'probar') {
     }
 }
 
+/*  Buscar portadas falsas: la misma imagen repetida en libros distintos  */
+$falsas = [];
+if ($paso === 'falsas') {
+    $st = $db->pdo->prepare("SELECT id, titulo, portada FROM listas_lectura WHERE usuario_id = ? AND portada LIKE 'uploads/portadas/%' ORDER BY id");
+    $st->execute([$uid]);
+
+    $grupos = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $b) {
+        $f = __DIR__ . '/' . $b['portada'];
+        if (!is_file($f)) continue;
+        $h = PortadasVerificadas::huella((string)file_get_contents($f));
+        if ($h === null) continue;
+
+        $puesto = false;
+        foreach ($grupos as &$g) {
+            if (PortadasVerificadas::distancia($g['hash'], $h) <= 5) { $g['libros'][] = $b; $puesto = true; break; }
+        }
+        unset($g);
+        if (!$puesto) $grupos[] = ['hash' => $h, 'libros' => [$b]];
+    }
+
+    // Sospechosas: repetidas en 2 o más libros, o iguales a una imagen de relleno ya conocida
+    $falsas = array_values(array_filter($grupos, fn($g) => count($g['libros']) >= 2 || PortadasVerificadas::coincideConPlaceholder($g['hash'])));
+    usort($falsas, fn($a, $b) => count($b['libros']) <=> count($a['libros']));
+    $_SESSION['rev_falsas'] = $falsas;
+}
+
 /*  Libros sin portada y elegir a mano  */
 $msg = '';
 $pendientes = [];
@@ -401,6 +453,33 @@ $etiquetas = [
 <link rel="stylesheet" href="/Reads/temas/<?= h($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= @filemtime(__DIR__ . '/css/styles.css') ?>">
 <?php if ($refresco !== ''): ?><meta http-equiv="refresh" content="1;url=<?= h($refresco) ?>"><?php endif; ?>
+<style>
+    .rp-wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 90px; }
+    .rp-card { background: var(--bg-card, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 16px; padding: 22px; margin-bottom: 16px; }
+    .rp-btn { display: inline-block; padding: 11px 22px; border-radius: 12px; background: var(--primary-color, #d87d8a); color: var(--primary-contrast, #fff); text-decoration: none; font-weight: 700; border: none; cursor: pointer; font-size: 1rem; }
+    .rp-btn.sec { background: var(--bg-chip, #eee); color: var(--text-color, #333); border: 1px solid var(--border-color, #ccc); }
+    .rp-bar { height: 12px; border-radius: 12px; background: var(--tint, rgba(0,0,0,.08)); overflow: hidden; margin: 14px 0; }
+    .rp-bar > div { height: 100%; background: var(--primary-color, #d87d8a); }
+    .rp-aviso { padding: 12px 14px; border-radius: 12px; background: var(--primary-soft, rgba(128,128,128,.15)); margin-bottom: 14px; }
+    .rp-fila { display: grid; grid-template-columns: 110px 110px 1fr; gap: 16px; align-items: start; }
+    .rp-img { text-align: center; font-size: .72rem; opacity: .85; }
+    .rp-img img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; background: var(--bg-chip, #eee); box-shadow: 0 3px 8px rgba(0,0,0,.2); display: block; margin-bottom: 4px; }
+    .rp-vacia { width: 100%; aspect-ratio: 2/3; border-radius: 8px; border: 2px dashed var(--border-color, #ccc); display: flex; align-items: center; justify-content: center; padding: 6px; box-sizing: border-box; margin-bottom: 4px; }
+    .rp-info h3 { margin: 0 0 2px; font-size: 1.05rem; }
+    .rp-info p { margin: 0 0 6px; font-size: .85rem; opacity: .85; }
+    .rp-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--tint, rgba(0,0,0,.08)); margin-bottom: 8px; }
+    .rp-info select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); font: inherit; font-size: .9rem; max-width: 100%; }
+    .rp-motivos { margin: 10px 0 0; padding-left: 20px; font-size: .88rem; }
+    .rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 14px; margin-top: 14px; }
+    .rp-tile { display: block; cursor: pointer; font-size: .75rem; }
+    .rp-tile img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; background: var(--bg-chip, #eee); box-shadow: 0 3px 8px rgba(0,0,0,.2); display: block; margin-bottom: 6px; }
+    .rp-tile .t { display: block; font-weight: 700; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .rp-tile .a { display: block; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rp-tile .c { display: block; margin-top: 4px; font-weight: 700; color: var(--danger, #c0392b); }
+    .rp-sticky { position: sticky; bottom: 14px; text-align: center; padding: 10px; }
+    .rp-pre { white-space: pre-wrap; word-break: break-word; font-size: .8rem; background: var(--bg-chip, #eee); padding: 12px; border-radius: 10px; }
+    @media (max-width: 620px) { .rp-fila { grid-template-columns: 90px 90px 1fr; gap: 10px; } }
+</style>
 </head>
 <body class="page-revisar">
 <div class="rp-wrap">
@@ -421,6 +500,40 @@ $etiquetas = [
         <p>Vistos hasta ahora: <strong><?= (int)($_SESSION['rev_relleno']['hechas'] ?? 0) ?></strong> rellenados · <?= (int)($_SESSION['rev_relleno']['fallidas'] ?? 0) ?> sin encontrar.</p>
         <p style="opacity:.7">No cierres esta pestaña.</p>
     </div>
+
+<?php elseif ($paso === 'falsas'): ?>
+    <div class="rp-card">
+        <h2>Portadas falsas (imagen de relleno)</h2>
+        <?php if (!function_exists('imagecreatefromstring')): ?>
+            <p>⚠️ A PHP le falta la extensión GD y sin ella no puedo comparar imágenes. En XAMPP: quita el «;» de <code>extension=gd</code> en php.ini y reinicia Apache.</p>
+        <?php elseif (empty($falsas)): ?>
+            <p>🎉 No he encontrado ninguna imagen repetida entre tus libros.</p>
+        <?php else: ?>
+            <p>Estas imágenes aparecen <strong>idénticas en varios libros distintos</strong>: son el relleno de Google u otras fuentes («image not available», cuadros grises…), no portadas reales. Al quitarlas, esos libros se buscan de nuevo con las fuentes mejoradas y, si no se encuentra nada, se verán con una portada generada.</p>
+        <?php endif; ?>
+        <p><a href="revisar_portadas.php?paso=resultados">← Volver a los resultados</a></p>
+    </div>
+
+    <?php if (!empty($falsas)): ?>
+    <form method="POST">
+        <input type="hidden" name="accion" value="quitar_falsas">
+        <?php foreach ($falsas as $i => $g): $n = count($g['libros']); ?>
+        <div class="rp-card rp-fila" style="grid-template-columns: 110px 1fr;">
+            <div class="rp-img">
+                <img src="<?= h($g['libros'][0]['portada']) ?>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+                Imagen repetida
+            </div>
+            <div class="rp-info">
+                <span class="rp-tag">🧹 En <?= $n ?> <?= $n === 1 ? 'libro' : 'libros' ?></span>
+                <p><?= h(implode(' · ', array_map(fn($b) => $b['titulo'], array_slice($g['libros'], 0, 6)))) ?><?= $n > 6 ? ' · …' : '' ?></p>
+                <label><input type="checkbox" name="grupo[<?= (int)$i ?>]" value="1" <?= $n >= 3 ? 'checked' : '' ?>> Quitar estas <?= $n ?> portadas</label>
+                <?php if ($n < 3): ?><p style="opacity:.7">Solo en <?= $n ?> libros: míralas y marca solo si de verdad es un relleno.</p><?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <div class="rp-sticky"><button type="submit" class="rp-btn">Quitar las marcadas</button></div>
+    </form>
+    <?php endif; ?>
 
 <?php elseif ($paso === 'pendientes'): ?>
     <?php if ($msg !== ''): ?><div class="rp-aviso">✅ <?= h($msg) ?></div><?php endif; ?>
@@ -544,6 +657,7 @@ $etiquetas = [
 
         <p style="margin-top:16px">
             <a class="rp-btn" href="revisar_portadas.php">🔄 Volver a revisar</a>
+            <a class="rp-btn sec" href="revisar_portadas.php?paso=falsas">🧹 Buscar portadas falsas</a>
             <?php if ($sinPortadaAhora > 0): ?>
                 <a class="rp-btn sec" href="revisar_portadas.php?paso=rellenar&ultimo=0">🔎 Rellenar los <?= $sinPortadaAhora ?> sin portada</a>
                 <a class="rp-btn" href="revisar_portadas.php?paso=pendientes">✋ Elegir a mano</a>
@@ -649,7 +763,8 @@ $etiquetas = [
             <input type="hidden" name="desde" value="0">
             <p><label><input type="checkbox" name="locales" value="1" checked>
                 Revisar también las imágenes guardadas en mi servidor (<code>uploads/portadas</code>) comparándolas con la portada fiable del libro. Es más lento, pero ahí suelen estar las equivocadas.</label></p>
-            <button type="submit" class="rp-btn">▶ Empezar la revisión</button>
+            <button type="submit" class="rp-btn"> Empezar la revisión</button>
+            <a class="rp-btn sec" href="revisar_portadas.php?paso=falsas" style="margin-left:8px">🧹 Buscar portadas falsas</a>
             <a href="perfil.php" style="margin-left:14px">← Volver</a>
         </form>
     </div>

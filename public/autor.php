@@ -125,7 +125,7 @@ $urlIdioma = fn($i) => 'autor.php?nombre=' . urlencode($nombre) . '&orden=' . $o
                      style="width:84px; height:84px; border-radius:50%; object-fit:cover; flex-shrink:0;">
             <?php endif; ?>
             <div>
-                <h1>✍️ <?= h($ficha['nombre'] ?? $nombre) ?></h1>
+                <h1> <?= h($ficha['nombre'] ?? $nombre) ?></h1>
                 <p>
                     <?= count($libros) ?> <?= count($libros) === 1 ? 'obra' : 'obras' ?><?= $filtroIdioma !== 'todos' ? ' en ' . h(mb_strtolower($etiquetasIdioma[$filtroIdioma])) . ' (de ' . $totalObras . ' en total)' : '' ?>
                     <?php if ($ficha && $ficha['nacimiento'] !== ''): ?> · Nacimiento: <?= h($ficha['nacimiento']) ?><?php endif; ?>
@@ -136,7 +136,7 @@ $urlIdioma = fn($i) => 'autor.php?nombre=' . urlencode($nombre) . '&orden=' . $o
 
         <?php if ($totalObras > 1): ?>
         <div class="bs-bloque">
-            <h2>🌐 Idioma</h2>
+            <h2> Idioma</h2>
             <div class="bs-chips">
                 <?php foreach ($etiquetasIdioma as $cod => $etq): ?>
                     <a class="bs-chip" style="<?= $filtroIdioma === $cod ? 'font-weight:700;' : '' ?>" href="<?= h($urlIdioma($cod)) ?>"><?= h($etq) ?> (<?= (int)$cuentaIdioma[$cod] ?>)</a>
@@ -147,7 +147,7 @@ $urlIdioma = fn($i) => 'autor.php?nombre=' . urlencode($nombre) . '&orden=' . $o
 
         <?php if (count($libros) > 1): ?>
         <div class="bs-bloque">
-            <h2>↕️ Ordenar</h2>
+            <h2> Ordenar</h2>
             <div class="bs-chips">
                 <a class="bs-chip" style="<?= $orden === 'populares' ? 'font-weight:700;' : '' ?>" href="<?= h($urlOrden('populares')) ?>">Más populares</a>
                 <a class="bs-chip" style="<?= $orden === 'recientes' ? 'font-weight:700;' : '' ?>" href="<?= h($urlOrden('recientes')) ?>">Más recientes</a>
@@ -160,7 +160,7 @@ $urlIdioma = fn($i) => 'autor.php?nombre=' . urlencode($nombre) . '&orden=' . $o
     <?php if (!empty($mios)): ?>
     <!-- Tus libros de este autor -->
     <section class="bs-card">
-        <h2>📚 Tus libros de <?= h($ficha['nombre'] ?? $nombre) ?></h2>
+        <h2> Tus libros de <?= h($ficha['nombre'] ?? $nombre) ?></h2>
         <div class="shelf-grid">
             <?php foreach ($mios as $m):
                 $portadaSrc   = obtenerPortadaValida($m['portada'] ?? '', (int)$m['id']);
@@ -183,7 +183,6 @@ $urlIdioma = fn($i) => 'autor.php?nombre=' . urlencode($nombre) . '&orden=' . $o
 
     <?php if (empty($libros)): ?>
         <section class="bs-card bs-vacio">
-            <div class="ico">📭</div>
             <?php if ($totalObras > 0): ?>
                 <h2>No hay obras de «<?= h($nombre) ?>» en <?= h(mb_strtolower($etiquetasIdioma[$filtroIdioma])) ?></h2>
                 <p>Prueba con otro idioma o <a href="<?= h($urlIdioma('todos')) ?>">mira todas las obras</a>.</p>

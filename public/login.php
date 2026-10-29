@@ -29,6 +29,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 }
 
 $recienRegistrado = isset($_GET['registrado']);
+$cuentaEliminada = isset($_GET['cuenta_eliminada']);
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -65,11 +67,15 @@ $recienRegistrado = isset($_GET['registrado']);
             <p class="rg-sub">Accede a tu biblioteca.</p>
 
             <?php if ($recienRegistrado && !$mensaje): ?>
-                <p class="rg-ok" role="status">✅ ¡Cuenta creada! Ya puedes iniciar sesión.</p>
+                <p class="rg-ok" role="status"> ¡Cuenta creada! Ya puedes iniciar sesión.</p>
+            <?php endif; ?>
+
+            <?php if ($cuentaEliminada && !$mensaje): ?>
+            <p class="rg-ok" role="status">Tu cuenta se ha eliminado correctamente.</p>
             <?php endif; ?>
 
             <?php if ($mensaje): ?>
-                <p class="rg-error" role="alert">⚠️ <?= htmlspecialchars($mensaje) ?></p>
+                <p class="rg-error" role="alert"> <?= htmlspecialchars($mensaje) ?></p>
             <?php endif; ?>
 
             <form method="POST" autocomplete="on">

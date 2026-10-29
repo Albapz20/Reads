@@ -25,11 +25,11 @@ if (!function_exists('e')) {
 
 /*  Estanterías disponibles */
 $estantes = [
-    'leido'      => ['📚', 'Leídos'],
-    'leyendo'    => ['📖', 'Leyendo'],
-    'tbr'        => ['🎯', 'TBR'],
-    'guardado'   => ['🎁', 'Wishlist'],
-    'abandonado' => ['❌', 'Abandonados'],
+    'leido'      => ['Leídos'],
+    'leyendo'    => ['Leyendo'],
+    'tbr'        => ['TBR'],
+    'guardado'   => ['Wishlist'],
+    'abandonado' => ['Abandonados'],
 ];
 $estado = $_GET['estado'] ?? 'leido';
 if (!isset($estantes[$estado])) $estado = 'leido';
@@ -116,9 +116,9 @@ $totalLibros = count($libros);
 $totalPaginas = array_sum(array_map(fn($l) => max((int)$l['paginas_totales'], (int)$l['paginas_leidas']), $libros));
 
 if ($estado === 'leido') {
-    $titulo = '📚 Estantería ' . ($verTodo ? 'histórica' : $yearSeleccionado);
+    $titulo = 'Estantería ' . ($verTodo ? 'histórica' : $yearSeleccionado);
 } else {
-    $titulo = $estantes[$estado][0] . ' ' . $estantes[$estado][1];
+    $titulo = $estantes[$estado][0];
 }
 
 /* Enlace para quitar el filtro de género conservando el resto */
@@ -152,7 +152,6 @@ try {
 function generarEstanteria(array $libros, string $estado, bool $hayFiltro = false, string $quitarUrl = '') {
     if (empty($libros)): ?>
         <div class="biblioteca-vacia">
-            <div class="biblioteca-vacia-icono">📚</div>
             <?php if ($hayFiltro): ?>
                 <h3>No hay libros con este filtro</h3>
                 <p>Prueba con otro género o quita el filtro para ver toda la estantería.</p>
@@ -162,7 +161,7 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
                 <p><?= $estado === 'leido'
                     ? 'Los libros que marques como leídos irán apareciendo aquí sobre tus repisas.'
                     : 'Añade libros desde su ficha y aparecerán aquí.' ?></p>
-                <a href="buscar.php" class="btn-vacio">🔍 Buscar libros</a>
+                <a href="buscar.php" class="btn-vacio"> Buscar libros</a>
             <?php endif; ?>
         </div>
         <?php return;
@@ -186,7 +185,7 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 
                     <div class="cubierta-generada" style="<?= $tienePortada ? 'display:none;' : 'display:flex;' ?>">
                         <span class="titulo-cubierta"><?= $titulo ?></span>
-                        <span class="decoracion-cubierta">📖</span>
+                        <span class="decoracion-cubierta"></span>
                     </div>
 
                     <?php if ($estrellas > 0): ?>
@@ -213,8 +212,6 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 <script src="main.js"></script>
 <title>Mi Biblioteca</title>
-
-
 </head>
 <body class="page-biblioteca">
 
@@ -262,15 +259,15 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
             </form>
 
             <button type="button" class="btn-tombola" id="tomAbrir">
-                🎰 ¿Qué leo ahora? <span class="n"><?= count($tbrLibros) ?></span>
+                 ¿Qué leo ahora? <span class="n"><?= count($tbrLibros) ?></span>
             </button>
         </div>
     </div>
 
     <nav class="pestanas" aria-label="Estanterías">
-        <?php foreach ($estantes as $clave => [$icono, $nombre]): ?>
+        <?php foreach ($estantes as $clave => [ $nombre]): ?>
             <a href="?estado=<?= $clave ?>" class="pestana <?= $estado === $clave ? 'activa' : '' ?>">
-                <?= $icono ?> <?= $nombre ?> <span class="n"><?= (int)($conteos[$clave] ?? 0) ?></span>
+             <?= $nombre ?> <span class="n"><?= (int)($conteos[$clave] ?? 0) ?></span>
             </a>
         <?php endforeach; ?>
     </nav>
@@ -285,12 +282,12 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 <dialog class="tom-dialog" id="tombola" aria-labelledby="tomTitulo">
     <button type="button" class="modal-cerrar" id="tomCerrar" aria-label="Cerrar">✕</button>
     <div class="tom-cuerpo">
-        <h2 id="tomTitulo">🎰 ¿Qué leo ahora?</h2>
+        <h2 id="tomTitulo"> ¿Qué leo ahora?</h2>
         <p class="tom-sub">Gira la tómbola y deja que el azar elija uno de tu TBR.</p>
 
         <div id="tomVacio" hidden>
             <p class="tom-sub">Tu TBR está vacía. Añade libros pendientes para poder jugar.</p>
-            <a href="buscar.php" class="tom-ver">🔍 Buscar libros</a>
+            <a href="buscar.php" class="tom-ver"> Buscar libros</a>
         </div>
 
         <div id="tomJuego">

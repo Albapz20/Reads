@@ -23,6 +23,7 @@ class PortadasService {
 
         $info = @getimagesizefromstring($contenido);
         if (!$info || $info[0] < 60 || $info[1] < 90) return false;
+        if (PortadasVerificadas::esPlaceholder($contenido)) return false;  
 
         $dir = dirname($rutaFisica);
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
@@ -34,6 +35,7 @@ class PortadasService {
     public static function guardarBytes(string $bytes, string $rutaFisica): bool {
         $info = @getimagesizefromstring($bytes);
         if (!$info || $info[0] < 60 || $info[1] < 90) return false;
+        if (PortadasVerificadas::esPlaceholder($bytes)) return false;  
         $dir = dirname($rutaFisica);
         if (!is_dir($dir)) @mkdir($dir, 0777, true);
         return file_put_contents($rutaFisica, $bytes) !== false;

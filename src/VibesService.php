@@ -8,6 +8,7 @@ class VibesService
     public const REPORTES_OCULTAR  = 3;    // con 3 reportes la imagen deja de mostrarse
 
     private PDO $pdo;
+
     public string $estado = '';
 
     public function __construct(PDO $pdo)
@@ -19,7 +20,7 @@ class VibesService
     private function asegurarTablas(): void
     {
         if (session_status() === PHP_SESSION_NONE) @session_start();
-        if (!empty($_SESSION['tablas_vibes_v5'])) return;
+        if (!empty($_SESSION['tablas_vibes_v6'])) return;
 
         try {
             $this->pdo->exec(
@@ -39,7 +40,6 @@ class VibesService
                 ) CHARACTER SET utf8mb4"
             );
 
-            // Si la tabla ya existía de antes, añadir las columnas nuevas
             $cols = $this->pdo->query("SHOW COLUMNS FROM libro_vibes")->fetchAll(PDO::FETCH_COLUMN);
             if (!in_array('origen', $cols, true)) {
                 $this->pdo->exec("ALTER TABLE libro_vibes ADD COLUMN origen VARCHAR(12) NOT NULL DEFAULT 'usuario'");
@@ -71,16 +71,21 @@ class VibesService
                 ) CHARACTER SET utf8mb4"
             );
             // Una sola vez: las imágenes automáticas antiguas se buscaron sin comprobar que fueran del libro
-            $hecho = (int)$this->pdo->query("SELECT COUNT(*) FROM libro_vibes_busquedas WHERE libro_id = '__filtro_v2__'")->fetchColumn();
+            $hecho = (int)$this->pdo->query("SELECT COUNT(*) FROM libro_vibes_busquedas WHERE libro_id = '__filtro_v3__'")->fetchColumn();
             if ($hecho === 0) {
                 $this->pdo->exec("DELETE FROM libro_vibes WHERE origen = 'auto'");
                 $this->pdo->exec("DELETE FROM libro_vibes_busquedas");
-                $this->pdo->exec("INSERT INTO libro_vibes_busquedas (libro_id, ultima) VALUES ('__filtro_v2__', NOW())");
+                $this->pdo->exec("INSERT INTO libro_vibes_busquedas (libro_id, ultima) VALUES ('__filtro_v3__', NOW())");
             }
-            $_SESSION['tablas_vibes_v5'] = true;
+            $_SESSION['tablas_vibes_v6'] = true;
         } catch (Throwable $e) {}
     }
 
+    /**
+     * Rellena el tablero con fanarts de DeviantArt y de Tumblr la primera vez que se abre un libro
+     * y los renueva una vez por semana (algunos enlaces de imagen caducan).
+     * Si fallan las dos APIs, no se reintenta hasta pasado un día.
+     */
     public function autocompletar(string $libroId, string $titulo, string $autor = '', string $isbn = '', string $descripcion = ''): void
     {
         $usaDA = DeviantArtService::disponible();
@@ -89,8 +94,9 @@ class VibesService
             $this->estado = 'sin claves de DeviantArt (deviantart_id / deviantart_secret) ni de Tumblr (tumblr_key) en la configuración';
             return;
         }
-        $depurar = isset($_GET['debug']);  
+        $depurar = isset($_GET['debug']);   // con ?debug se salta la espera entre búsquedas
 
+        // Si acaba de fallar todo, no insistir con otros libros durante 30 minutos (evita páginas lentas)
         if (!$depurar && isset($_SESSION['fanart_fallo']) && (time() - $_SESSION['fanart_fallo']) < 1800) {
             $this->estado = 'las fuentes de fanarts fallaron hace poco; se reintentará en unos minutos';
             return;

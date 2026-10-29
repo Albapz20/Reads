@@ -3,10 +3,11 @@ require_once __DIR__ . '/../config/config.php';
 
 class PortadasVerificadas {
 
-    const UMBRAL_TITULO = 88;       // similitud mínima de título (0-100)
+    const UMBRAL_TITULO = 88;  
 
-    public static int $limitado = 0;   // veces que un servidor respondió 429 (demasiadas consultas)
-    public static int $errores  = 0;   // consultas que fallaron (límite, sin internet, caída…)
+    public static int $limitado = 0;   
+    public static int $errores  = 0;  
+
 
     private static function sinAcentos(string $s): string {
         return strtr(mb_strtolower($s, 'UTF-8'), [
@@ -21,7 +22,6 @@ class PortadasVerificadas {
         return trim(preg_replace('/\s+/', ' ', $s));
     }
 
-    /** Título comparable: sin (saga, #1), sin "(Spanish Edition)", sin subtítulo ni artículo inicial */
     public static function normalizar(string $titulo): string {
         $t = preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo);
         $partes = preg_split('/\s*:\s*|\s+[-–—]\s+/u', $t);
@@ -37,8 +37,8 @@ class PortadasVerificadas {
         return (bool)preg_match('/^(\d{9}[\dXx]|\d{13})$/', $v);
     }
 
-    /* Comparación */
-  
+    /*  Comparación */
+   
     public static function autorCoincide(string $autoresLibro, array $autoresCandidato): ?bool {
         $nombres = array_values(array_filter(array_map('trim', preg_split('/[,;&]/u', $autoresLibro))));
         $candidato = [];
@@ -51,7 +51,7 @@ class PortadasVerificadas {
         foreach ($nombres as $nombre) {
             $t = self::tokens($nombre);
             if (!$t) continue;
-            if (in_array(end($t), $candidato, true)) return true;        
+            if (in_array(end($t), $candidato, true)) return true;          
             $solapados += count(array_intersect($t, $candidato));
         }
         return $solapados >= 2;
@@ -80,9 +80,9 @@ class PortadasVerificadas {
         return ['ok' => $ok, 'titulo' => $pt, 'autor' => $au];
     }
 
-
+    /*   Red */
     private static function json(string $url): ?array {
-        usleep(150000);   
+        usleep(150000);   // pequeña pausa para no saturar a los servidores
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -120,7 +120,24 @@ class PortadasVerificadas {
         return str_replace(['http://', '&edge=curl'], ['https://', ''], $img);
     }
 
+    /* Buscar la portada correcta */
     public static function buscar(string $titulo, string $autores, string $isbn = ''): ?array {
+        // 1) Esa edición, con título y autor comprobados
+        $r = self::buscarExacto($titulo, $autores, $isbn);
+        if ($r) return $r;
+
+        // 2) Como Goodreads o StoryGraph: si esa edición no tiene imagen, la de otra edición de la misma obra
+        if ($isbn !== '' && ($r = self::portadaDeOtrasEdiciones($isbn, $titulo, $autores))) return $r;
+
+        // 3) Libro en español cuyo original está en inglés: se busca con el título traducido 
+        foreach (self::titulosAlternativos($titulo) as $alt) {
+            $r = self::buscarExacto($alt, $autores, '');
+            if ($r) { $r['fuente'] .= ' · título traducido'; return $r; }
+        }
+        return null;
+    }
+
+    private static function buscarExacto(string $titulo, string $autores, string $isbn = ''): ?array {
         $mejor = null;
 
         $tituloBusqueda = trim(str_replace('"', '', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo)));
@@ -144,7 +161,7 @@ class PortadasVerificadas {
             ];
         };
 
-        //  Portada directa por ISBN 
+        //  0) Portada directa por ISBN 
         if ($conIsbn) {
             $urlDirecta = 'https://covers.openlibrary.org/b/isbn/' . strtoupper($isbn) . '-L.jpg?default=false';
             $bytes = self::descargar($urlDirecta);
@@ -158,7 +175,7 @@ class PortadasVerificadas {
             }
         }
 
-        //  Open Library 
+        //  1) Open Library 
         $deOL = function (?array $json, bool $porIsbn) use ($titulo, $autores, $considerar, $nuevo) {
             foreach (($json['docs'] ?? []) as $d) {
                 if (empty($d['cover_i'])) continue;
@@ -179,7 +196,7 @@ class PortadasVerificadas {
             $deOL(self::json('https://openlibrary.org/search.json?' . http_build_query($p)), false);
         }
 
-        //  Apple Books (sin clave, suele tener ediciones en español) 
+        //  2) Apple Books 
         if (!$suficiente()) {
             foreach (['es', 'us'] as $pais) {
                 $json = self::json('https://itunes.apple.com/search?' . http_build_query([
@@ -199,7 +216,7 @@ class PortadasVerificadas {
             }
         }
 
-        //  Google Books 
+        //  3) Google Books
         $deGoogle = function (?array $json, bool $porIsbn) use ($titulo, $autores, $considerar, $nuevo) {
             foreach (($json['items'] ?? []) as $it) {
                 $vi  = $it['volumeInfo'] ?? [];
@@ -287,7 +304,7 @@ class PortadasVerificadas {
     }
 
     public static function huella(string $bytes): ?string {
-        if (!function_exists('imagecreatefromstring')) return null;   
+        if (!function_exists('imagecreatefromstring')) return null;  
         $img = @imagecreatefromstring($bytes);
         if (!$img) return null;
 
@@ -314,7 +331,6 @@ class PortadasVerificadas {
         return $d;
     }
 
-    /* Candidatos para elegir a mano */
     public static function candidatos(string $titulo, string $autores, int $max = 12): array {
         $res = [];
         $vistos = [];
@@ -386,7 +402,7 @@ class PortadasVerificadas {
         return array_slice($res, 0, $max);
     }
 
-    /* Portadas directas por ISBN */
+    /*  Portadas directas por ISBN */
     public static function portadasPorIsbn(string $isbn): array {
         $isbn = strtoupper(preg_replace('/[^0-9X]/i', '', $isbn));
         if (!self::esIsbn($isbn)) return [];
@@ -401,13 +417,14 @@ class PortadasVerificadas {
             $bytes = self::descargar($url);
             if (!$bytes) continue;
             $info = @getimagesizefromstring($bytes);
-            if (!$info || $info[0] < 100 || $info[1] < 150) continue;   
+            if (!$info || $info[0] < 100 || $info[1] < 150) continue;   // descarta placeholders diminutos
             $res[] = ['url' => $url, 'fuente' => $fuente, 'titulo_enc' => 'ISBN ' . $isbn, 'autores_enc' => '', 'puntos' => 0];
         }
         return $res;
     }
 
-    /* Portadas directas  */
+    /* Portadas directas */
+
     public static function urlsDirectas(string $libroId): array {
         $libroId = trim($libroId);
         $res = [];
@@ -415,12 +432,16 @@ class PortadasVerificadas {
             $isbn = strtoupper($libroId);
             $res[] = ['Open Library (ISBN)', "https://covers.openlibrary.org/b/isbn/{$isbn}-L.jpg?default=false", false];
             $res[] = ['Google Books (ISBN)', "https://books.google.com/books/content?vid=ISBN{$isbn}&printsec=frontcover&img=1&zoom=1", true];
+            if ($i10 = self::isbn10($isbn)) {
+                $res[] = ['Amazon (ISBN)', "https://m.media-amazon.com/images/P/{$i10}.01._SCLZZZZZZZ_.jpg", false];
+            }
         } elseif (preg_match('/^[A-Za-z0-9_-]{12}$/', $libroId)) {
             $res[] = ['Google Books (id)', 'https://books.google.com/books/content?id=' . urlencode($libroId) . '&printsec=frontcover&img=1&zoom=1', true];
         }
         return $res;
     }
 
+    /** Descarga muchas URLs a la vez. Devuelve clave => contenido (o null si falló) */
     public static function descargarVarias(array $urls, int $timeout = 12): array {
         $mh = curl_multi_init();
         $handles = [];
@@ -484,13 +505,14 @@ class PortadasVerificadas {
             $ph = self::md5PlaceholderGoogle();
             if ($ph !== null && md5($bytes) === $ph) return false;
         }
+        if (self::esPlaceholder($bytes)) return false;   // imágenes de relleno ya detectadas en tu servidor
         return true;
     }
 
     /**
      * Resuelve de golpe las portadas directas de varios libros.
      * @param array $libros [['id' => 1, 'libro_id' => '978…'], …]
-     * @return array id => ['bytes' => …, 'fuente' => …, 'url' => …] 
+     * @return array id => ['bytes' => …, 'fuente' => …, 'url' => …] (solo los que se han encontrado)
      */
     public static function resolverDirectos(array $libros): array {
         $trabajos = [];
@@ -517,5 +539,128 @@ class PortadasVerificadas {
             }
         }
         return $res;
+    }
+
+    /*  Imágenes de relleno */
+    private static ?array $placeholders = null;
+
+    private static function rutaPlaceholders(): string {
+        return __DIR__ . '/../public/uploads/portadas/_placeholders.json';
+    }
+
+    public static function placeholdersConocidos(): array {
+        if (self::$placeholders === null) {
+            $f = self::rutaPlaceholders();
+            $d = is_file($f) ? json_decode((string)@file_get_contents($f), true) : [];
+            self::$placeholders = is_array($d) ? array_values(array_filter($d, 'is_string')) : [];
+        }
+        return self::$placeholders;
+    }
+
+    public static function coincideConPlaceholder(string $huella): bool {
+        foreach (self::placeholdersConocidos() as $ph) {
+            if (strlen($ph) === 64 && self::distancia($huella, $ph) <= 6) return true;
+        }
+        return false;
+    }
+
+    public static function registrarPlaceholder(string $huella): void {
+        if (strlen($huella) !== 64 || self::coincideConPlaceholder($huella)) return;
+        $lista = self::placeholdersConocidos();
+        $lista[] = $huella;
+        $f = self::rutaPlaceholders();
+        $dir = dirname($f);
+        if (!is_dir($dir)) @mkdir($dir, 0777, true);
+        @file_put_contents($f, json_encode($lista));
+        self::$placeholders = $lista;
+    }
+
+    public static function esPlaceholder(string $bytes): bool {
+        $h = self::huella($bytes);
+        return $h !== null && self::coincideConPlaceholder($h);
+    }
+
+    private static function isbn10(string $isbn): ?string {
+        $isbn = strtoupper($isbn);
+        if (strlen($isbn) === 10) return $isbn;
+        if (strlen($isbn) === 13 && strpos($isbn, '978') === 0) {
+            $nucleo = substr($isbn, 3, 9);
+            $suma = 0;
+            for ($i = 0; $i < 9; $i++) $suma += (10 - $i) * (int)$nucleo[$i];
+            $control = (11 - ($suma % 11)) % 11;
+            return $nucleo . ($control === 10 ? 'X' : (string)$control);
+        }
+        return null;
+    }
+
+    /*  Portada de otra edición de la misma obra  */
+    private static function portadaDeOtrasEdiciones(string $isbn, string $titulo, string $autores): ?array {
+        if (!self::esIsbn($isbn)) return null;
+
+        $edicion = self::json('https://openlibrary.org/isbn/' . strtoupper($isbn) . '.json');
+        $obra = $edicion['works'][0]['key'] ?? null;
+        if (!$obra) return null;
+
+        $ids = [];
+        $w = self::json('https://openlibrary.org' . $obra . '.json');
+        foreach (($w['covers'] ?? []) as $c) { if ((int)$c > 0) $ids[] = (int)$c; }
+        if (!$ids) {
+            $eds = self::json('https://openlibrary.org' . $obra . '/editions.json?limit=40');
+            foreach (($eds['entries'] ?? []) as $e) {
+                foreach (($e['covers'] ?? []) as $c) { if ((int)$c > 0) $ids[] = (int)$c; }
+            }
+        }
+
+        foreach (array_slice(array_values(array_unique($ids)), 0, 4) as $id) {
+            $url = 'https://covers.openlibrary.org/b/id/' . $id . '-L.jpg?default=false';
+            $bytes = self::descargar($url);
+            if ($bytes && self::imagenValida($bytes)) {
+                return [
+                    'url' => $url, 'fuente' => 'Open Library (otra edición)',
+                    'titulo_enc' => $titulo, 'autores_enc' => $autores,
+                    'titulo' => 100, 'autor_ok' => true, 'puntos' => 500,
+                ];
+            }
+        }
+        return null;
+    }
+
+    /* Título traducido al inglés */
+    private static function titulosAlternativos(string $titulo): array {
+        $clave = function_exists('config') ? trim((string)config('deepl_key', '')) : '';
+        if ($clave === '') return [];
+
+        $limpio = trim(preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo));
+        $partes = preg_split('/\s*:\s*/u', $limpio);
+        $limpio = trim($partes[0] ?? $limpio);
+        if (mb_strlen($limpio) < 3) return [];
+
+        $cache = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'reads_trad_' . md5($limpio) . '.txt';
+        if (is_file($cache)) {
+            $t = trim((string)@file_get_contents($cache));
+            return ($t !== '' && $t !== '-') ? [$t] : [];
+        }
+
+        $host = (substr($clave, -3) === ':fx') ? 'api-free.deepl.com' : 'api.deepl.com';
+        $ch = curl_init('https://' . $host . '/v2/translate');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => http_build_query(['text' => $limpio, 'target_lang' => 'EN-US']),
+            CURLOPT_HTTPHEADER     => ['Authorization: DeepL-Auth-Key ' . $clave],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $resp = curl_exec($ch);
+        $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($resp === false || $http >= 400) return [];   // sin caché: se reintentará
+
+        $d = json_decode($resp, true);
+        $t = trim((string)($d['translations'][0]['text'] ?? ''));
+        $util = ($t !== '' && self::normalizar($t) !== self::normalizar($limpio));
+        @file_put_contents($cache, $util ? $t : '-');
+        return $util ? [$t] : [];
     }
 }

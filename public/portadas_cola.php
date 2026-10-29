@@ -15,20 +15,21 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 $db  = new Database();
 $uid = (int)$usuario['id'];
 
-$esAdmin = in_array($uid, array_map('intval', (array)config('admin_ids', [])), true)
-        || (!empty($usuario['email']) && in_array(strtolower($usuario['email']), array_map('strtolower', (array)config('admin_emails', [])), true));
+$esAdmin = in_array($uid, array_map('intval', (array)config('admin_ids', [3])), true)
+        || (!empty($usuario['email']) && in_array(strtolower($usuario['email']), array_map('strtolower', (array)config('admin_emails', ['admin@admin.com'])), true));
 
-// Memoria de la sesión 
+// Memoria de la sesión (se olvida a las 6 h)
 $caducar = function (array $a): array { foreach ($a as $k => $t) { if (time() - $t > 6 * 3600) unset($a[$k]); } return $a; };
-$fallidas = $caducar($_SESSION['cola_fallidas'] ?? []);   // buscados por título y sin éxito
-$directo  = $caducar($_SESSION['cola_directo'] ?? []);    // ya probados por descarga directa
+$fallidas = $caducar($_SESSION['cola_fallidas'] ?? []);   
+$directo  = $caducar($_SESSION['cola_directo'] ?? []);   
 
 $st = $db->pdo->prepare("SELECT id, libro_id, titulo, autores FROM listas_lectura
                          WHERE usuario_id = ?
                            AND (portada IS NULL OR portada = '' OR portada LIKE '%default%' OR portada LIKE '%placehold%')
                          ORDER BY id LIMIT 500");
 $st->execute([$uid]);
-$pendientes = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($l) => !isset($fallidas[(int)$l['id']])));
+$todas = $st->fetchAll(PDO::FETCH_ASSOC);
+$pendientes = array_values(array_filter($todas, fn($l) => !isset($fallidas[(int)$l['id']])));
 
 $resp = ['nuevas' => [], 'pendientes' => count($pendientes), 'pausa' => false, 'rapida' => false, 'admin' => $esAdmin];
 
@@ -40,7 +41,7 @@ $guardar = function (int $id, string $bytes) use ($db, $uid): ?string {
     return $ruta;
 };
 
-// fase rapida
+//  FASE RÁPIDA 
 $paraDirecto = array_values(array_filter($pendientes, fn($l) =>
     !isset($directo[(int)$l['id']]) && PortadasVerificadas::urlsDirectas((string)($l['libro_id'] ?? ''))));
 
@@ -56,17 +57,19 @@ if ($paraDirecto) {
             $resp['pendientes']--;
         }
     }
-    $resp['rapida'] = count($paraDirecto) > count($lote);   // ¿quedan más por la vía rápida?
+    $resp['rapida'] = count($paraDirecto) > count($lote); 
     $_SESSION['cola_directo'] = $directo;
     $resp['pendientes'] = max(0, $resp['pendientes']);
-    echo json_encode($resp);
+    $resp['sin_portada'] = max(0, count($todas) - count($resp['nuevas']));
+echo json_encode($resp);
     exit;
 }
 
-// busqueda por titulo y autor
+//  FASE LENTA (búsqueda por título y autor) 
 if (!empty($_SESSION['cola_pausa_hasta']) && time() < $_SESSION['cola_pausa_hasta']) {
     $resp['pausa'] = true;
-    echo json_encode($resp);
+    $resp['sin_portada'] = max(0, count($todas) - count($resp['nuevas']));
+echo json_encode($resp);
     exit;
 }
 
@@ -83,11 +86,11 @@ foreach (array_slice($pendientes, 0, 2) as $l) {
         $resp['nuevas'][] = ['id' => $id, 'portada' => $ruta];
         $resp['pendientes']--;
     } elseif (PortadasVerificadas::$limitado === 0) {
-        $fallidas[$id] = time();   
+        $fallidas[$id] = time();  
         $resp['pendientes']--;
     }
 
-    if (PortadasVerificadas::$limitado > 0) { 
+    if (PortadasVerificadas::$limitado > 0) {   
         $_SESSION['cola_pausa_hasta'] = time() + 300;
         $resp['pausa'] = true;
         break;
@@ -96,4 +99,5 @@ foreach (array_slice($pendientes, 0, 2) as $l) {
 
 $_SESSION['cola_fallidas'] = $fallidas;
 $resp['pendientes'] = max(0, $resp['pendientes']);
+$resp['sin_portada'] = max(0, count($todas) - count($resp['nuevas']));
 echo json_encode($resp);

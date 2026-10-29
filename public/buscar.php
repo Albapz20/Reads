@@ -28,7 +28,7 @@ if ($buscado) {
     if ($termino !== "") {
         $resultados = $service->buscarLibros($termino);
 
-        // Guardar en el historial de búsqueda (salvo si viene de pulsar una recomendación)
+        // Guardar en el historial de búsqueda 
         if (!isset($_GET['rec'])) {
             $stmt = $db->pdo->prepare("INSERT INTO historial_busqueda (usuario_id, termino, fecha) VALUES (?, ?, NOW())");
             $stmt->execute([$usuario["id"], $termino]);
@@ -36,7 +36,7 @@ if ($buscado) {
     }
 }
 
-// Libros que el usuario ya tiene (para marcarlos en los resultados)
+// Libros que el usuario ya tiene 
 $stmt = $db->pdo->prepare("SELECT libro_id, estado FROM listas_lectura WHERE usuario_id = ?");
 $stmt->execute([$usuario["id"]]);
 $misLibros = [];
@@ -44,7 +44,7 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $misLibros[(string)$r['libro_id']] = $r['estado'];
 }
 
-// Búsquedas recientes (sin repetir)
+// Búsquedas recientes 
 $stmt = $db->pdo->prepare("SELECT termino, MAX(fecha) AS f FROM historial_busqueda WHERE usuario_id = ? GROUP BY termino ORDER BY f DESC LIMIT 8");
 $stmt->execute([$usuario["id"]]);
 $recientes = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -75,7 +75,7 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
 
     <!-- Buscador -->
     <section class="bs-hero">
-        <h1>🔍 Buscar libros</h1>
+        <h1> Buscar libros</h1>
         <p>Encuentra tu próxima lectura por título, autor o tema.</p>
 
         <form method="GET" action="buscar.php" class="bs-form">
@@ -90,7 +90,7 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
 
         <?php if (!empty($recientes)): ?>
         <div class="bs-bloque">
-            <h2>🕘 Búsquedas recientes</h2>
+            <h2> Búsquedas recientes</h2>
             <div class="bs-chips">
                 <?php foreach ($recientes as $r): ?>
                     <a class="bs-chip" href="buscar.php?q=<?= urlencode($r) ?>"><?= htmlspecialchars($r) ?></a>
@@ -100,7 +100,7 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
         <?php endif; ?>
 
         <div class="bs-bloque">
-            <h2>🏷️ Explorar por género</h2>
+            <h2> Explorar por género</h2>
             <div class="bs-chips">
                 <?php foreach ($generos as $g): ?>
                     <a class="bs-chip" href="buscar.php?q=<?= urlencode($g) ?>"><?= htmlspecialchars($g) ?></a>
@@ -174,7 +174,7 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
 
         <!-- Recomendaciones -->
         <section class="bs-card" id="bloque-recomendados">
-            <h2>✨ Recomendados para ti</h2>
+            <h2> Recomendados para ti</h2>
             <p class="bs-sub" id="rec-subtitulo">Basado en tus últimas lecturas</p>
             <div class="rec-scroll" id="rec-carrusel">
                 <span style="opacity:.6; font-size:.9rem;">Cargando sugerencias...</span>
@@ -249,7 +249,7 @@ function escapeHtml(t) {
         const base = data.basadoEn || [];
         const libros = data.libros || [];
 
-        if (!libros.length) { bloque.style.display = 'none'; return; }   // sin lecturas: no mostrar el bloque
+        if (!libros.length) { bloque.style.display = 'none'; return; }  
 
         if (base.length) {
             const nombres = base.slice(0, 2).map(t => '<strong>' + escapeHtml(t) + '</strong>');
@@ -258,7 +258,6 @@ function escapeHtml(t) {
         }
 
         cont.innerHTML = libros.map(l => {
-            // Open Library trae su propia url (al buscador); Google y locales abren libro.php
             const enlace = l.url
                 ? l.url + '&rec=1'
                 : 'libro.php?id=' + encodeURIComponent(l.id);

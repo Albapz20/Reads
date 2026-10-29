@@ -4,6 +4,7 @@ require_once "../src/AjustesService.php";
 require_once "../src/UserService.php";
 require_once "../src/Database.php";
 require_once "../src/ListaService.php";
+require_once "../src/GenerosHelper.php";
 require_once "../src/CorreoService.php";
 
 $usuario = Auth::usuario();
@@ -25,16 +26,26 @@ $temasDisponibles = [
     'sunset'      => ['nombre' => 'Sunset',      'icono' => '🌅', 'bg' => '#fff5ec', 'border' => '#fbd0a8', 'text' => '#4a1d0e'],
     'coffee'      => ['nombre' => 'Café',        'icono' => '☕', 'bg' => '#231a16', 'border' => '#5a443a', 'text' => '#f4e9d8'],
     'dracula'     => ['nombre' => 'Dracula',     'icono' => '🐉', 'bg' => '#1e1f2e', 'border' => '#44476a', 'text' => '#f8f8f2'],
-    'academia'    => ['nombre' => 'Academia',    'icono' => '📜', 'bg' => '#131e19', 'border' => '#3b5444', 'text' => '#efe6cf'],
+    'lavanda'     => ['nombre' => 'Lavanda',     'icono' => '🪻', 'bg' => '#f5f0ff', 'border' => '#d8c8f0', 'text' => '#4b3f72'],
 ];
 
 // Obtener usuario e información del tema
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
+// Solo el administrador ve el progreso de la búsqueda de portadas
+$emailActual = strtolower(trim($datos['email'] ?? $usuario['email'] ?? ''));
+$esAdmin     = ($emailActual === 'admin@admin.com');
 $tema = strtolower(trim($datos["tema_visual"] ?? "pastel"));
 if (!isset($temasDisponibles[$tema])) $tema = 'pastel';   
 
 $mensaje = "";
 $iniciarCola = false;   
+
+// Si el archivo supera el límite de PHP, el servidor descarta todo el formulario y no llega ni $_POST ni $_FILES:
+// sin esto no se mostraría ningún mensaje.
+if ($_SERVER["REQUEST_METHOD"] === "POST" && empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    $mensaje = "El archivo es demasiado grande para el servidor (límite: " . ini_get('post_max_size') . "). "
+             . "Prueba con un CSV más pequeño o sube el valor de post_max_size y upload_max_filesize en php.ini.";
+}
 
 /* Guardar tema visual */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
@@ -53,6 +64,75 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
     $tema = $tema_visual;
 
     $mensaje = "Tema visual actualizado a " . $temasDisponibles[$tema]['nombre'] . ".";
+}
+/* Eliminar cuenta */
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (empty($_SESSION['csrf_eliminar'])) {
+    $_SESSION['csrf_eliminar'] = bin2hex(random_bytes(16));
+}
+$abrirEliminar = false;
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["eliminar_cuenta"])) {
+    $tokenOk = hash_equals($_SESSION['csrf_eliminar'], (string)($_POST['csrf'] ?? ''));
+
+    $stmtPw = $db->pdo->prepare("SELECT password, avatar FROM usuarios WHERE id = ? LIMIT 1");
+    $stmtPw->execute([$usuario["id"]]);
+    $filaUsuario = $stmtPw->fetch(PDO::FETCH_ASSOC) ?: [];
+    $passOk = !empty($filaUsuario['password'])
+              && password_verify((string)($_POST['password_eliminar'] ?? ''), $filaUsuario['password']);
+
+    if (!$tokenOk || empty($_POST['confirmo'])) {
+        $mensaje = "No se pudo eliminar la cuenta. Inténtalo de nuevo.";
+    } elseif (!$passOk) {
+        $mensaje = "La contraseña no es correcta. Tu cuenta no se ha eliminado.";
+        $abrirEliminar = true;
+    } else {
+        $idEliminar = (int)$usuario["id"];
+        try {
+            // Todas las tablas que guardan datos de este usuario (listas, puntuaciones, ajustes, seguidores...)
+            $tablas = $db->pdo->query(
+                "SELECT c.TABLE_NAME, c.COLUMN_NAME
+                   FROM information_schema.COLUMNS c
+                   JOIN information_schema.TABLES t
+                     ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_TYPE = 'BASE TABLE'
+                  WHERE c.TABLE_SCHEMA = DATABASE()
+                    AND c.COLUMN_NAME IN ('usuario_id', 'user_id', 'seguidor_id', 'seguido_id')
+                    AND c.TABLE_NAME <> 'usuarios'"
+            )->fetchAll(PDO::FETCH_ASSOC);
+
+            $db->pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+            $db->pdo->beginTransaction();
+            foreach ($tablas as $t) {
+                $db->pdo->prepare("DELETE FROM `{$t['TABLE_NAME']}` WHERE `{$t['COLUMN_NAME']}` = ?")
+                        ->execute([$idEliminar]);
+            }
+            $db->pdo->prepare("DELETE FROM usuarios WHERE id = ?")->execute([$idEliminar]);
+            $db->pdo->commit();
+            $db->pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+            // Foto de perfil subida 
+            $av = (string)($filaUsuario['avatar'] ?? '');
+            if (strpos($av, 'img:') === 0) {
+                $archivo = __DIR__ . '/../img/avatares/' . basename(substr($av, 4));
+                if (is_file($archivo)) @unlink($archivo);
+            }
+
+            // Cerrar sesión por completo
+            $_SESSION = [];
+            if (ini_get('session.use_cookies')) {
+                $p = session_get_cookie_params();
+                setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+            }
+            session_destroy();
+
+            header("Location: login.php?cuenta_eliminada=1");
+            exit;
+        } catch (Throwable $e) {
+            if ($db->pdo->inTransaction()) $db->pdo->rollBack();
+            try { $db->pdo->exec("SET FOREIGN_KEY_CHECKS = 1"); } catch (Throwable $e2) {}
+            $mensaje = "No se pudo eliminar la cuenta. Inténtalo más tarde.";
+        }
+    }
 }
 
 // Obtener o crear ajustes en la tabla 'ajustes_usuario'
@@ -145,6 +225,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
             $colBookId    = $colMap['book id'] ?? null;
             $colPaginas   = $colMap['number of pages'] ?? null;
             $colNota      = $colMap['my rating'] ?? null;
+            $colShelves = $colMap['bookshelves'] ?? null;
 
             $isbnValido = function ($raw): string {
                 $v = strtoupper(preg_replace('/[^0-9X]/i', '', (string)$raw));
@@ -152,10 +233,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
             };
 
             $filas = [];
+            $omitidas = 0;   // filas sin título (no se pueden importar)
             while (($data = fgetcsv($tempStream, 5000, ",")) !== false) {
-                if ($colTitulo === null || !isset($data[$colTitulo])) continue;
+                if ($colTitulo === null || !isset($data[$colTitulo])) { $omitidas++; continue; }
                 $titulo = trim($data[$colTitulo]);
-                if (empty($titulo)) continue;
+                if (empty($titulo)) { $omitidas++; continue; }
 
                 $autor = ($colAutor !== null && isset($data[$colAutor])) ? trim($data[$colAutor]) : 'Autor desconocido';
                 $estanteGR = ($colEstante !== null && isset($data[$colEstante])) ? strtolower(trim($data[$colEstante])) : 'to-read';
@@ -212,17 +294,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
                     'fecha_fin' => $fechaFin,
                     'paginas'   => $paginas,
                     'nota'      => $nota,
+                    'generos'   => ($colShelves !== null && isset($data[$colShelves])) ? normalizarGeneros(separarGeneros($data[$colShelves])) : [],
                 ];
             }
             fclose($tempStream);
 
             $importados = 0;
+            $colGen = columnaGeneros($db->pdo);
             foreach ($filas as $libro) {
                 $listaService->agregarLibro(
                     $usuario["id"], $libro['id_ref'], $libro['titulo'],
                     '/Reads/img/default_cover.jpg', $libro['estado'],
                     $libro['autor'], $libro['fecha_fin']
                 );
+                if ($colGen && !empty($libro['generos'])) {
+                try {
+                 $db->pdo->prepare("UPDATE listas_lectura SET `{$colGen}` = ? WHERE usuario_id = ? AND libro_id = ?")
+                    ->execute([implode(', ', $libro['generos']), $usuario["id"], $libro['id_ref']]);
+                 } catch (Throwable $e) {}
+                    }
 
                 if ($libro['paginas'] > 0) {
                     try {
@@ -249,14 +339,29 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
                 $importados++;
             }
 
-            $mensaje = "¡Se han importado $importados libros! Ahora busco sus portadas en segundo plano.";
+            if ($importados > 0) {
+                $mensaje = "Importación completada. Se han importado $importados libros"
+                          . ($omitidas > 0 ? " ($omitidas filas sin título se han omitido)" : "")
+                          . ".";
+            } else {
+                $mensaje = "No se ha importado ningún libro. Comprueba que el archivo es el CSV de Goodreads (My Books > Import/Export)"
+                         . ($omitidas > 0 ? " — se han encontrado $omitidas filas sin título." : ".");
+            }
             $iniciarCola = $importados > 0;
             $totalLibrosUsuario += $importados;
         } else {
             $mensaje = "Error: El archivo CSV está vacío o es inválido.";
         }
     } else {
-        $mensaje = "Por favor, selecciona un archivo CSV válido.";
+        // Motivo concreto del fallo de subida
+        $codigoSubida = $_FILES["csv_file"]["error"] ?? UPLOAD_ERR_NO_FILE;
+        if ($codigoSubida === UPLOAD_ERR_INI_SIZE || $codigoSubida === UPLOAD_ERR_FORM_SIZE) {
+            $mensaje = "El archivo es demasiado grande para el servidor (límite: " . ini_get('upload_max_filesize') . ").";
+        } elseif ($codigoSubida === UPLOAD_ERR_NO_FILE) {
+            $mensaje = "Por favor, selecciona un archivo CSV válido.";
+        } else {
+            $mensaje = "No se pudo subir el archivo (código de error $codigoSubida). Inténtalo de nuevo.";
+        }
     }
 }
 
@@ -302,27 +407,38 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_ajustes"])) {
 
 // Enviar mensaje de contacto
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
-    $asunto  = trim($_POST["asunto"]);
-    $mensajeContacto = trim($_POST["mensaje_contacto"]);
+    $asunto          = trim((string)($_POST["asunto"] ?? ""));
+    $mensajeContacto = trim((string)($_POST["mensaje_contacto"] ?? ""));
 
-    if (!empty($asunto) && !empty($mensajeContacto)) {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    $ultimoEnvio = (int)($_SESSION['contacto_ultimo'] ?? 0);
+
+    if ($asunto === '' || $mensajeContacto === '') {
+        $mensaje = "Por favor, completa todos los campos del formulario de contacto.";
+    } elseif (mb_strlen($asunto) > 150 || mb_strlen($mensajeContacto) > 3000) {
+        $mensaje = "El mensaje es demasiado largo. Reduce el asunto o el texto.";
+    } elseif (time() - $ultimoEnvio < 60) {
+        $mensaje = "Espera un minuto antes de enviar otro mensaje.";
+    } else {
         $correoService = new CorreoService();
         $enviado = $correoService->enviarContacto(
-            $usuario["email"],
-            $usuario["nombre"] ?? "Usuario Reads",
+            $datos['email']  ?? $usuario['email']  ?? '',
+            $datos['nombre'] ?? $usuario['nombre'] ?? 'Usuario Reads',
             $asunto,
             $mensajeContacto
         );
 
         if ($enviado) {
+            $_SESSION['contacto_ultimo'] = time();
             $mensaje = "¡Gracias por contactarnos! Tu mensaje ha sido enviado correctamente.";
         } else {
-            $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde.";
+            $esAdminTmp = (strtolower(trim($datos['email'] ?? '')) === 'admin@admin.com');
+           $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde."
+         . ($correoService->ultimoError !== '' ? ' [Detalle: ' . $correoService->ultimoError . ']' : '');
         }
-    } else {
-        $mensaje = "Por favor, completa todos los campos del formulario de contacto.";
     }
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -335,6 +451,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 </head>
 <body class="page-ajustes">
 
+<!-- Aviso mientras se importa el CSV (se muestra desde el JavaScript de abajo) -->
+<div class="import-overlay" id="overlay-importando" role="status" aria-live="polite">
+    <div class="import-card">
+        <div class="import-spinner"></div>
+        <h2>Importando tu biblioteca…</h2>
+        <p>Estamos leyendo tu archivo y añadiendo los libros. Puede tardar un minuto si tienes muchos.</p>
+        <span class="import-archivo" id="import-nombre"></span>
+        <p><strong>No cierres ni recargues esta página.</strong></p>
+    </div>
+</div>
+
 <div class="container">
 
     <!-- Cabecera -->
@@ -344,14 +471,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
     </div>
 
     <?php if ($mensaje): ?>
-        <div class="panel alert-box" style="margin-bottom: 20px; font-weight: bold;">
+        <div class="panel alert-box" id="mensaje-ajustes" role="status" style="margin-bottom: 20px; font-weight: bold;">
             <?= htmlspecialchars($mensaje) ?>
         </div>
     <?php endif; ?>
 
     <?php if ($iniciarCola): ?>
-        <div class="panel card-panel" id="cola-progreso">
-            <h2 class="card-title">🖼️ Buscando las portadas…</h2>
+        <div class="panel card-panel" id="cola-progreso" <?= $esAdmin ? '' : 'hidden style="display:none"' ?>>
+            <h2 class="card-title"> Buscando las portadas…</h2>
             <p class="card-subtitle">Puedes seguir usando la app: se van rellenando solas, también mientras navegas por otras páginas.</p>
             <div style="height:10px; border-radius:10px; background:var(--tint, rgba(0,0,0,.08)); overflow:hidden;">
                 <div id="cola-barra" style="height:100%; width:0; background:var(--primary-color, #d87d8a); transition:width .4s;"></div>
@@ -362,7 +489,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 
     <!-- Estilo Visual y Temas -->
     <div class="panel card-panel">
-        <h2 class="card-title">🎨 Estilo Visual & Temas</h2>
+        <h2 class="card-title"> Estilo Visual & Temas</h2>
         <p class="card-subtitle">Elige la paleta visual que mejor se adapte a tu estado de ánimo o momento del día:</p>
 
         <form method="POST" id="formTema">
@@ -437,30 +564,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 
     <!-- Importar / Exportar Goodreads -->
     <div class="panel card-panel">
-        <h2 class="card-title">📤📚 Importar / Exportar Goodreads</h2>
+        <h2 class="card-title"> Importar / Exportar Goodreads</h2>
 
         <div class="goodreads-grid">
             <div class="review-card goodreads-box">
                 <div>
-                    <h3>📌 Importar biblioteca desde CSV:</h3>
-                    <p>Sube tu archivo <code>.csv</code> descargado de Goodreads (<em>My Books &gt; Import/Export</em>). Detectará títulos, autores, número de páginas, estado y valoraciones. Las portadas se buscan después, sin hacerte esperar.</p>
+                    <h3> Importar biblioteca desde CSV:</h3>
+                    <p>Sube tu archivo <code>.csv</code> descargado de Goodreads (<em>My Books &gt; Import/Export</em>). </p>
                 </div>
                 <form method="POST" enctype="multipart/form-data" id="formImportarCSV">
                     <input type="hidden" name="importar_goodreads" value="1">
-                    <input type="file" name="csv_file" id="inputCSV" accept=".csv" style="display: none;" onchange="document.getElementById('formImportarCSV').submit();">
-                    <button type="button" class="btn-white-card" onclick="document.getElementById('inputCSV').click();">
-                        📤 Seleccionar archivo CSV
+                    <input type="file" name="csv_file" id="inputCSV" accept=".csv" style="display: none;" onchange="importarCSV(this);">
+                    <button type="button" class="btn-white-card" id="btnSeleccionarCSV" onclick="document.getElementById('inputCSV').click();">
+                         Seleccionar archivo CSV
                     </button>
                 </form>
             </div>
 
             <div class="review-card goodreads-box">
                 <div>
-                    <h3>📌 Exportar mi biblioteca:</h3>
+                    <h3> Exportar mi biblioteca:</h3>
                     <p>Descarga tu biblioteca completa (<strong><?= $totalLibrosUsuario ?> libros</strong>) en un archivo <code>.csv</code> estándar compatible con Goodreads, Excel y Notion.</p>
                 </div>
                 <a href="ajustes.php?exportar=goodreads" class="btn-white-card">
-                    📥 Descargar mi biblioteca (.CSV)
+                     Descargar mi biblioteca (.CSV)
                 </a>
             </div>
         </div>
@@ -468,7 +595,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 
     <!-- Contacto con el equipo -->
     <div class="panel card-panel">
-        <h2 class="card-title">📩 Contacta con el equipo</h2>
+        <h2 class="card-title"> Contacta con el equipo</h2>
         <p class="card-subtitle">¿Tienes sugerencias, ideas de nuevas funciones o has encontrado alguna duda? Envíanos tu mensaje:</p>
 
         <form method="POST">
@@ -481,10 +608,39 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
             </div>
 
             <button type="submit" name="enviar_contacto" class="submit-btn btn-pill">
-                📩 Enviar mensaje
+                 Enviar mensaje
             </button>
         </form>
     </div>
+
+           <!-- Eliminar cuenta -->
+    <div class="zona-eliminar">
+        <span>¿Quieres dejar Reads?</span>
+        <button type="button" class="btn-eliminar-cuenta" onclick="document.getElementById('dlg-eliminar').showModal()">Eliminar mi cuenta</button>
+    </div>
+
+    <dialog class="del-dialog" id="dlg-eliminar">
+        <form method="POST" class="del-cuerpo">
+            <h2>¿Eliminar tu cuenta?</h2>
+            <p>Se borrarán tus libros, valoraciones, reseñas y estadísticas. No se puede deshacer.</p>
+
+            <input type="hidden" name="eliminar_cuenta" value="1">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['csrf_eliminar']) ?>">
+
+            <label for="password_eliminar">Tu contraseña para confirmar:</label>
+            <input type="password" id="password_eliminar" name="password_eliminar" class="form-control" required autocomplete="current-password">
+
+            <label class="del-check">
+                <input type="checkbox" name="confirmo" value="1" required>
+                <span>Entiendo que es permanente.</span>
+            </label>
+
+            <div class="del-acciones">
+                <button type="button" class="del-cancelar" onclick="document.getElementById('dlg-eliminar').close()">Cancelar</button>
+                <button type="submit" class="del-confirmar">Eliminar</button>
+            </div>
+        </form>
+    </dialog>
 <!-- Footer -->
 <footer class="site-footer">
     <span style="font-size: 0.85rem; color: #777;">Reads &copy; <?= date("Y") ?></span>
@@ -494,8 +650,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 </footer>
 
 </div>
-
-
 
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
@@ -516,9 +670,73 @@ function seleccionarTema(nombreTema) {
     document.getElementById('inputTemaVisual').value = nombreTema;
     document.getElementById('formTema').submit();
 }
+
+// Importar CSV: avisa al usuario de que se está importando y envía el formulario
+function importarCSV(input) {
+    const archivo = input.files && input.files[0];
+    if (!archivo) return;
+
+    if (!/\.csv$/i.test(archivo.name)) {
+        alert('Selecciona el archivo .csv que descargaste de Goodreads.');
+        input.value = '';
+        return;
+    }
+
+    const tam = archivo.size < 1048576
+        ? Math.max(1, Math.round(archivo.size / 1024)) + ' KB'
+        : (archivo.size / 1048576).toFixed(1) + ' MB';
+    document.getElementById('import-nombre').textContent = archivo.name + ' · ' + tam;
+    document.getElementById('overlay-importando').classList.add('visible');
+
+    const boton = document.getElementById('btnSeleccionarCSV');
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = '⏳ Importando…';
+    }
+
+    // Pequeña espera para que el aviso se pinte antes de enviar el formulario
+    setTimeout(() => document.getElementById('formImportarCSV').submit(), 80);
+}
+
+// Si se vuelve a esta página con el botón "atrás", quitar el aviso
+window.addEventListener('pageshow', () => {
+    document.getElementById('overlay-importando').classList.remove('visible');
+    const boton = document.getElementById('btnSeleccionarCSV');
+    if (boton) {
+        boton.disabled = false;
+        boton.textContent = 'Seleccionar archivo CSV';
+    }
+});
+
+// Al terminar, llevar la vista al mensaje de resultado
+document.addEventListener('DOMContentLoaded', () => {
+    const msg = document.getElementById('mensaje-ajustes');
+    if (msg) msg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    <?php if ($abrirEliminar): ?>
+    document.getElementById('dlg-eliminar').showModal();
+<?php endif; ?>
+});
 </script>
 <?php if ($iniciarCola): ?>
 <script src="/Reads/public/portadas_cola.js"></script>
+<script>
+// Géneros: se detectan solos en segundo plano tras importar (el usuario no ve nada)
+(async function () {
+    try {
+        for (let i = 0; i < 60; i++) {
+            const fd = new FormData();
+            fd.append("accion", "procesar");
+            fd.append("ajax", "1");
+            const r = await fetch("rellenar_generos.php", { method: "POST", body: fd, credentials: "same-origin" });
+            if (!r.ok) break;
+            const j = await r.json();
+            if (j.pausa || !j.pendientes || !j.procesados) break;
+            await new Promise(r => setTimeout(r, 800));
+        }
+    } catch (e) {}
+})();
+</script>
 <?php endif; ?>
 </body>
 </html>

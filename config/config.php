@@ -2,7 +2,7 @@
 
 define('APP_BASE', '/Reads');
 define('APP_TEMA_DEFECTO', 'pastel');
-define('APP_CONTACTO', 'tu-correo@dominio.com');   // para el User-Agent de las APIs externas
+define('APP_CONTACTO', 'aperezd20.com');   // para el User-Agent de las APIs externas
 define('LECTURA_MIN_POR_PAGINA', 1.5);
 define('LIBROS_POR_PAGINA', 24);
 

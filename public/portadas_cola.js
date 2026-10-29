@@ -1,8 +1,3 @@
-/* Rellena las portadas que faltan en segundo plano y las cambia SOLAS en la página.
-   - Usuario normal: no ve ningún mensaje (en ajustes, tras importar, solo la barra de progreso).
-   - Administrador (admin_ids / admin_emails en config.local.php): ve un pequeño indicador.
-   - En el HTML, el contenedor de cada portada lleva  data-portada-id="<id del libro>".
-     Si una página no los tiene, se recarga sola UNA vez cuando no estás escribiendo. */
 (function () {
     const caja  = document.getElementById('cola-progreso');
     const barra = document.getElementById('cola-barra');
@@ -69,7 +64,7 @@
         }
         panelAdmin.textContent = d.pendientes > 0
             ? '🖼️ Cola de portadas: ' + d.pendientes + ' pendientes · ' + encontradas + ' encontradas' + (d.pausa ? ' · en pausa' : '')
-            : '🖼️ Cola de portadas terminada · ' + encontradas + ' encontradas';
+            : '🖼️ Cola terminada · ' + encontradas + ' encontradas · ' + (d.sin_portada || 0) + ' libros siguen sin portada real';
     }
 
     /*  Barra de progreso  */
@@ -100,8 +95,6 @@
         pintarProgreso(d);
         indicadorAdmin(d);
 
-        // Las portadas aparecen A LA VEZ: primero todas las de la fase rápida (la gran mayoría),
-        // y al final de la cola las pocas que requieren buscar por título.
         if (!rapidaAplicada && !d.rapida) { rapidaAplicada = true; aplicarTodas(); }
         else if (d.pendientes === 0 || d.pausa) aplicarTodas();
 

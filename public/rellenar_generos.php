@@ -8,13 +8,21 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 @set_time_limit(120);
 
 $usuario = Auth::usuario();
+$usuario = Auth::usuario();
 if (!$usuario) { header("Location: login.php"); exit; }
+session_write_close();   // libera la sesión: el resto de páginas no se quedan esperando a esta tanda
 
 $db  = new Database();
 $pdo = $db->pdo;
 $userService = new UserService();
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
+
+// La pantalla manual es solo para el administrador; la detección en segundo plano (ajax) es para todos
+$esAdmin = (strtolower(trim($datos['email'] ?? $usuario['email'] ?? '')) === 'admin@admin.com');
+$esAjax  = (($_POST['ajax'] ?? '') === '1');
+if (!$esAjax && !$esAdmin) { header("Location: estadisticas.php"); exit; }
+ignore_user_abort(true);   // si el usuario cambia de página, la tanda termina igualmente
 
 $col = columnaGeneros($pdo);
 if ($col === null) { die("No se pudo acceder a la columna de géneros de la tabla listas_lectura."); }
@@ -31,6 +39,8 @@ $hizoProceso = false;
 $accion = $_POST['accion'] ?? '';
 
 /*  Procesar una tanda automática  */
+$pausa = false;
+$guardados = 0;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accion === 'procesar') {
     $hizoProceso = true;
     $selCat  = $colCat  ? ", `{$colCat}` AS cat"    : ", NULL AS cat";
@@ -46,47 +56,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $accion === 'procesar') {
     foreach ($lote as $b) {
         $norm = [];
         $fuente = '';
-        $detalle = '';
+        $errorRed = '';
 
-        // 1. Columna "categorias" si ya trae algo
         if (!empty($b['cat'])) {
             $norm = normalizarGeneros(separarGeneros(strip_tags((string)$b['cat'])));
             if ($norm) $fuente = 'Columna categorias';
         }
 
-        // 2. Google Books / Open Library
+        // Google Books / Open Library (categorías y, si no hay, su sinopsis)
         if (!$norm) {
-            $cats = buscarGenerosOnline((string)$b['titulo'], (string)($b['autores'] ?? ''), (string)($b['libro_id'] ?? ''));
-            $detalle = (string)($GLOBALS['curl_ultimo_error'] ?? '');
-            $nuevo = normalizarGeneros($cats);
-            if ($nuevo) { $norm = $nuevo; $fuente = 'Google Books / Open Library'; }
+            $online = buscarDatosOnline((string)$b['titulo'], (string)($b['autores'] ?? ''), (string)($b['libro_id'] ?? ''));
+            $errorRed = $online['error'];
+            $norm = normalizarGeneros($online['categorias']);
+            if ($norm) {
+                $fuente = 'Google Books / Open Library';
+            } elseif ($online['descripcion'] !== '') {
+                $norm = inferirGenerosDeTexto($b['titulo'] . ' ' . $online['descripcion']);
+                if ($norm) $fuente = 'Sinopsis online';
+            }
         }
 
-        // 3. Sinopsis 
+        // Sinopsis guardada en la base de datos
         if (!$norm && !empty($b['descr'])) {
-            $deducido = inferirGenerosDeTexto($b['titulo'] . ' ' . $b['descr']);
-            if ($deducido) { $norm = $deducido; $fuente = 'Sinopsis'; }
+            $norm = inferirGenerosDeTexto($b['titulo'] . ' ' . $b['descr']);
+            if ($norm) $fuente = 'Sinopsis';
+        }
+
+        // Fallo de conexión o límite de Google: NO se marca como "sin clasificar"; se reintenta más tarde
+        if (!$norm && $errorRed !== '') {
+            $pausa = true;
+            $resultados[] = ['titulo' => $b['titulo'], 'valor' => 'Pendiente', 'detalle' => 'Error de conexión: ' . $errorRed, 'ok' => false];
+            break;
         }
 
         $valor = $norm ? implode(', ', $norm) : '-';
         $pdo->prepare("UPDATE listas_lectura SET `{$col}` = ? WHERE id = ? AND usuario_id = ?")
             ->execute([$valor, $b['id'], $usuario["id"]]);
+        $guardados++;
 
         $resultados[] = [
             'titulo'  => $b['titulo'],
             'valor'   => $norm ? $valor : 'Sin clasificar',
-            'detalle' => $norm ? $fuente : ($detalle !== '' ? 'Error de conexión: ' . $detalle : 'No se encontraron datos'),
+            'detalle' => $norm ? $fuente : 'No se encontraron datos',
             'ok'      => (bool)$norm,
         ];
     }
     if (!$lote) $aviso = 'No quedan libros pendientes.';
 
-    // Modo automático (lo llama estadisticas.php en segundo plano): responde en JSON
-    if (($_POST['ajax'] ?? '') === '1') {
+    // Modo automático (en segundo plano): responde en JSON
+    if ($esAjax) {
         $c = $pdo->prepare("SELECT COUNT(*) FROM listas_lectura WHERE usuario_id = ? AND {$condPend}");
         $c->execute([$usuario["id"]]);
         header('Content-Type: application/json');
-        echo json_encode(['procesados' => count($resultados), 'pendientes' => (int)$c->fetchColumn()]);
+        echo json_encode(['procesados' => $guardados, 'pendientes' => (int)$c->fetchColumn(), 'pausa' => $pausa]);
         exit;
     }
 }
@@ -140,7 +162,8 @@ $stmt = $pdo->prepare("SELECT id, titulo, autores FROM listas_lectura
 $stmt->execute([$usuario["id"]]);
 $listaManual = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$continuar = ($hizoProceso && $pendientes > 0 && !empty($resultados)) || ($autoInicio && $pendientes > 0);
+$continuar = !$pausa && (($hizoProceso && $pendientes > 0 && !empty($resultados)) || ($autoInicio && $pendientes > 0));
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -175,7 +198,7 @@ $continuar = ($hizoProceso && $pendientes > 0 && !empty($resultados)) || ($autoI
     </section>
 
     <section class="st-card">
-        <div class="st-card-head"><h2>⚙️ Detección automática</h2></div>
+        <div class="st-card-head"><h2> Detección automática</h2></div>
         <p class="vacio">Busca el género de cada libro (columna de categorías, Google Books, Open Library y, si no hay nada, la sinopsis). Si no está seguro, deja el libro sin clasificar para que lo asignes tú. Se procesan <?= $LOTE ?> libros por tanda y se encadenan solas hasta terminar.</p>
         <form method="POST" id="formProcesar">
             <input type="hidden" name="accion" value="procesar">
@@ -186,14 +209,14 @@ $continuar = ($hizoProceso && $pendientes > 0 && !empty($resultados)) || ($autoI
 
         <form method="POST" onsubmit="return confirm('Se borrarán los géneros detectados automáticamente y se volverán a detectar. Los que hayas corregido a mano se mantienen. ¿Continuar?');">
             <input type="hidden" name="accion" value="reclasificar">
-            <button type="submit" class="btn-reto">🔁 Reclasificar todos los libros</button>
+            <button type="submit" class="btn-reto"> Reclasificar todos los libros</button>
         </form>
         <p class="vacio">Los géneros que corrijas a mano (desde la ficha de cada libro o desde aquí) nunca se tocan.</p>
     </section>
 
     <?php if (!empty($resultados)): ?>
     <section class="st-card">
-        <div class="st-card-head"><h2>📋 Última tanda</h2></div>
+        <div class="st-card-head"><h2> Última tanda</h2></div>
         <table class="tabla-libros">
             <thead><tr><th>Libro</th><th>Resultado</th><th>Detalle</th></tr></thead>
             <tbody>
@@ -214,7 +237,7 @@ $continuar = ($hizoProceso && $pendientes > 0 && !empty($resultados)) || ($autoI
 
     <?php if ($sinClasificar > 0): ?>
     <section class="st-card">
-        <div class="st-card-head"><h2>✍️ Asignar a mano</h2></div>
+        <div class="st-card-head"><h2> Asignar a mano</h2></div>
         <p class="vacio">Estos libros no se han podido clasificar. Escribe el género (puedes poner varios separados por coma). Géneros reconocidos: <?= htmlspecialchars(implode(', ', array_keys(reglasGeneros()))) ?>.</p>
 
         <form method="POST">

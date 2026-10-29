@@ -194,50 +194,72 @@ function claveGoogleBooks(): string {
 
 // Busca las categorías del libro en Google Books y, si no hay, en Open Library
 function buscarGenerosOnline(string $titulo, string $autores, string $libroId): array {
+    return buscarDatosOnline($titulo, $autores, $libroId)['categorias'];
+}
+// Busca categorías y sinopsis del libro. 'error' solo se rellena con fallos TEMPORALES
+function buscarDatosOnline(string $titulo, string $autores, string $libroId): array {
+    $res = ['categorias' => [], 'descripcion' => '', 'error' => ''];
+
+    $anotar = function () use (&$res) {
+        $e = (string)($GLOBALS['curl_ultimo_error'] ?? '');
+        if ($e !== '' && preg_match('/^(cURL|HTTP 429|HTTP 5)/', $e)) $res['error'] = $e;
+    };
+    $tomar = function (array $vol) use (&$res) {
+        if (!$res['categorias'] && !empty($vol['categories'])) $res['categorias'] = (array)$vol['categories'];
+        if ($res['descripcion'] === '' && !empty($vol['description'])) $res['descripcion'] = (string)$vol['description'];
+    };
+    $yaHayGenero = fn() => (bool)normalizarGeneros($res['categorias']);
+
     $tituloLimpio = trim(preg_replace('/\s+/', ' ', preg_replace('/\s*[\(\[\{].*?[\)\]\}]\s*/u', ' ', $titulo)));
     $autor = trim(explode(',', $autores)[0] ?? '');
-    $tl = mb_strtolower($tituloLimpio, 'UTF-8');
+    $tl  = mb_strtolower($tituloLimpio, 'UTF-8');
     $key = claveGoogleBooks();
 
     // 1. Google Books por ISBN o por ID de Google
     if (preg_match('/^(\d{9}[\dXx]|\d{13})$/', $libroId)) {
         $json = curlJson('https://www.googleapis.com/books/v1/volumes?q=' . urlencode('isbn:' . $libroId) . $key);
-        $c = $json['items'][0]['volumeInfo']['categories'] ?? [];
-        if ($c) return $c;
+        $anotar();
+        $tomar($json['items'][0]['volumeInfo'] ?? []);
     } elseif (preg_match('/^[A-Za-z0-9_-]{12}$/', $libroId)) {
         $json = curlJson('https://www.googleapis.com/books/v1/volumes/' . urlencode($libroId) . ($key !== '' ? '?' . ltrim($key, '&') : ''));
-        $c = $json['volumeInfo']['categories'] ?? [];
-        if ($c) return $c;
+        $anotar();
+        $tomar($json['volumeInfo'] ?? []);
     }
+    if ($yaHayGenero()) return $res;
 
     // 2. Google Books por título + autor
     $q = 'intitle:"' . $tituloLimpio . '"' . ($autor !== '' ? ' inauthor:"' . $autor . '"' : '');
     $json = curlJson('https://www.googleapis.com/books/v1/volumes?maxResults=5&q=' . urlencode($q) . $key);
+    $anotar();
     foreach ($json['items'] ?? [] as $item) {
-        $c = $item['volumeInfo']['categories'] ?? [];
-        $t = mb_strtolower($item['volumeInfo']['title'] ?? '', 'UTF-8');
-        if (!$c || $t === '') continue;
+        $vol = $item['volumeInfo'] ?? [];
+        $t = mb_strtolower($vol['title'] ?? '', 'UTF-8');
+        if ($t === '') continue;
         similar_text($tl, $t, $pct);
-        if ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t)) return $c;
+        if ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t)) {
+            $tomar($vol);
+            if ($yaHayGenero()) return $res;
+        }
     }
 
     // 3. Open Library (temas del libro)
     $params = ['title' => $tituloLimpio, 'limit' => 3, 'fields' => 'title,subject'];
     if ($autor !== '') $params['author'] = $autor;
     $json = curlJson('https://openlibrary.org/search.json?' . http_build_query($params));
+    $anotar();
     foreach ($json['docs'] ?? [] as $doc) {
         $s = $doc['subject'] ?? [];
         $t = mb_strtolower($doc['title'] ?? '', 'UTF-8');
         if (!$s || $t === '') continue;
         similar_text($tl, $t, $pct);
         if ($pct >= 60 || str_contains($t, $tl) || str_contains($tl, $t)) {
-            return soloGenerosNucleo(normalizarGeneros(array_slice($s, 0, 40)));
+            $nucleo = soloGenerosNucleo(normalizarGeneros(array_slice($s, 0, 40)));
+            if ($nucleo) { $res['categorias'] = $nucleo; return $res; }
         }
     }
 
-    return [];
+    return $res;
 }
-
 // Columnas de listas_lectura en minúsculas => nombre real
 function columnasListasLectura(PDO $pdo): array {
     $cols = [];

@@ -1,14 +1,21 @@
 <?php
-require_once __DIR__ . '/DeviantArtService.php';   
+require_once __DIR__ . '/DeviantArtService.php';  
 
 class TumblrService
 {
+    /** Último error  */
     public string $ultimoError = '';
+
+    /** Qué se probó y cuántas publicaciones pasaron el filtro */
     public array $log = [];
+
+    /** Etiquetas (ya normalizadas) que indican que es una obra de arte */
     private const ETIQUETAS_ARTE = [
-        'fanart', 'fan art', 'fanarts', 'art', 'artwork', 'illustration', 'ilustracion', 'digital art',
-        'digital painting', 'drawing', 'sketch', 'my art', 'painting', 'concept art', 'character design', 'artists on tumblr',
+        'fanart', 'fan art', 'fanarts', 'artwork', 'illustration', 'ilustracion', 'digital art',
+        'digital painting', 'drawing', 'sketch', 'painting', 'concept art', 'character design',
     ];
+
+    /** Etiquetas (ya normalizadas) que descartan la publicación */
     private const ETIQUETAS_PROHIBIDAS = [
         'nsfw', 'porn', 'nude', 'naked', 'explicit', 'xxx', 'hentai', 'r18', '18', 'sex', 'gore', 'erotica', 'not safe for work',
     ];
@@ -45,6 +52,7 @@ class TumblrService
         }
         $personajes   = $N::nombresDe($descripcion);
 
+        //  Etiquetas por las que preguntar 
         $consultas = [];
         if ($tituloEn !== '') {
             $consultas[mb_strtolower($tituloEn)]              = 'título original';
@@ -75,11 +83,15 @@ class TumblrService
 
             $buenas = 0;
             $porque = [];
+            $tiposPost = [];
             $desc = ['sin imagen' => 0, 'contenido adulto' => 0, 'no es arte' => 0, 'pruebas insuficientes' => 0];
             foreach ($posts as $p) {
                 $id = (string)($p['id_string'] ?? $p['id'] ?? '');
                 if ($id === '' || isset($vistos[$id])) continue;
                 $vistos[$id] = true;
+
+                $tp = (string)($p['type'] ?? (isset($p['content']) ? 'bloques' : '?'));
+                $tiposPost[$tp] = ($tiposPost[$tp] ?? 0) + 1;
 
                 $imagen = $this->imagenDe($p);
                 $enlace = (string)($p['post_url'] ?? '');
@@ -129,10 +141,19 @@ class TumblrService
             }
             $detalle = [];
             foreach ($porque as $k => $n) $detalle[] = "$n por $k";
+            $extra = '';
+            if ($desc['sin imagen'] > 0) {
+                $lista = [];
+                foreach ($tiposPost as $k => $n) $lista[] = "$k=$n";
+                $extra = ' {tipos: ' . implode(', ', $lista) . '}';
+                if ($desc['sin imagen'] === count($posts) && $posts) {
+                    $extra .= ' {campos del primero: ' . implode(',', array_slice(array_keys($posts[0]), 0, 14)) . '}';
+                }
+            }
             $motivos = [];
             foreach ($desc as $motivo => $n) { if ($n > 0) $motivos[] = "$n $motivo"; }
             $this->log[] = "«{$tag}» ({$origen}): " . count($posts) . " publicaciones, $buenas son de este libro" . ($detalle ? ' [' . implode('; ', $detalle) . ']' : '')
-                         . ($motivos ? ' [descartadas: ' . implode(', ', $motivos) . ']' : '');
+                         . ($motivos ? ' [descartadas: ' . implode(', ', $motivos) . ']' : '') . $extra;
         }
 
         if (!$huboRespuesta) return null;
@@ -188,6 +209,7 @@ class TumblrService
         return '';
     }
 
+    /** Título original (en inglés) de una edición traducida, si Open Library lo conoce */
     private function tituloOriginal(string $isbn): string
     {
         [$codigo, $resp] = $this->http('https://openlibrary.org/isbn/' . urlencode($isbn) . '.json');

@@ -132,11 +132,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <?php if ($libro["estado"] === "pendiente"): ?>
                     <option value="pendiente" selected>Pendiente</option>
                 <?php endif; ?>
-                <option value="guardado"   <?= $libro["estado"] === "guardado"   ? "selected" : "" ?>>🎁 Wishlist</option>
-                <option value="tbr"        <?= $libro["estado"] === "tbr"        ? "selected" : "" ?>>🎯 TBR</option>
-                <option value="leyendo"    <?= $libro["estado"] === "leyendo"    ? "selected" : "" ?>>📖 Leyendo</option>
-                <option value="leido"      <?= $libro["estado"] === "leido"      ? "selected" : "" ?>>✅ Leído</option>
-                <option value="abandonado" <?= $libro["estado"] === "abandonado" ? "selected" : "" ?>>❌ Abandonado</option>
+                <option value="guardado"   <?= $libro["estado"] === "guardado"   ? "selected" : "" ?>> Wishlist</option>
+                <option value="tbr"        <?= $libro["estado"] === "tbr"        ? "selected" : "" ?>> TBR</option>
+                <option value="leyendo"    <?= $libro["estado"] === "leyendo"    ? "selected" : "" ?>> Leyendo</option>
+                <option value="leido"      <?= $libro["estado"] === "leido"      ? "selected" : "" ?>> Leído</option>
+                <option value="abandonado" <?= $libro["estado"] === "abandonado" ? "selected" : "" ?>> Abandonado</option>
             </select><br><br>
 
             <label><strong>Fecha fin:</strong></label><br>

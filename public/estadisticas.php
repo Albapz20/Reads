@@ -52,6 +52,7 @@ $year = date("Y");
 $yearPrev = (int)$year - 1;
 $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $tema = $datos["tema_visual"] ?? "pastel";
+$esAdmin = (strtolower(trim($datos['email'] ?? $usuario['email'] ?? '')) === 'admin@admin.com');
 
 // Páginas reales de un libro leído.
 $exprPaginas = "COALESCE(NULLIF(CAST(paginas_totales AS SIGNED), 0), NULLIF(CAST(paginas_leidas AS SIGNED), 0), 0)";
@@ -357,6 +358,14 @@ if ($colGeneros !== null) {
     if ($restoN > 0) $mapaGeneros[] = ['nombre' => 'Más géneros', 'n' => $restoN, 'libros' => [], 'resto' => true];
 }
 
+// Libros de toda la biblioteca pendientes de género 
+$pendientesGeneros = 0;
+if ($colGeneros !== null) {
+    $c = $db->pdo->prepare("SELECT COUNT(*) FROM listas_lectura WHERE usuario_id = ? AND " . condicionGeneroPendiente($colGeneros));
+    $c->execute([$usuario["id"]]);
+    $pendientesGeneros = (int)$c->fetchColumn();
+}
+
 // Enlaces de las pestañas: cada una cambia solo su parámetro y conserva los otros
 function urlEstadisticas(array $cambios): string {
     global $periodoTop, $periodoNotas, $periodoGeneros;
@@ -564,7 +573,7 @@ function urlEstadisticas(array $cambios): string {
             <?php if ($colGeneros === null): ?>
                 <p class="vacio">No se ha podido preparar el almacenamiento de géneros en la base de datos.</p>
             <?php elseif (empty($mapaGeneros)): ?>
-                <p class="vacio">Todavía no hay géneros para este período. <a href="rellenar_generos.php">Completar géneros de mis libros</a></p>
+                <p class="vacio"><?= $pendientesGeneros > 0 ? 'Tus géneros irán apareciendo aquí en unos minutos.' : 'Todavía no hay géneros para este período.' ?></p>
             <?php else: ?>
                 <div class="mapa-generos" id="mapaGeneros">
                     <div class="mg-burbujas" role="img" aria-label="Burbujas de géneros literarios: cuanto más grande, más libros"></div>
@@ -572,11 +581,11 @@ function urlEstadisticas(array $cambios): string {
                 </div>
                 <p class="mapa-pie">
                     <?= (int)$librosConGenero ?> <?= $librosConGenero === 1 ? 'libro' : 'libros' ?> con género
-                    <?php if ($librosSinGenero > 0): ?> · <?= (int)$librosSinGenero ?> sin género · <a href="rellenar_generos.php">Completar</a><?php endif; ?>
+                    <?php if ($esAdmin && $librosSinGenero > 0): ?> · <?= (int)$librosSinGenero ?> sin género · <a href="rellenar_generos.php">Completar</a><?php endif; ?>
                     · Cuanto más grande la burbuja, más libros de ese género (un libro puede tener varios). Pulsa un género para ver sus libros.
                 </p>
             <?php endif; ?>
-            <?php if ($colGeneros !== null): ?><p class="mapa-pie" id="estadoGeneros" hidden></p><?php endif; ?>
+            <?php if ($colGeneros !== null && $esAdmin): ?><p class="mapa-pie" id="estadoGeneros" hidden></p><?php endif; ?>
         </section>
 
         <!-- Datos curiosos -->
@@ -868,28 +877,29 @@ new Chart(ctxMeses, {
     window.addEventListener("resize", function () { clearTimeout(t); t = setTimeout(pintarBurbujas, 150); });
 })();
 
-<?php if ($colGeneros !== null && $librosSinGenero > 0): ?>
-// Detección automática de géneros en segundo plano (libros que aún no tienen género)
+<?php if ($colGeneros !== null && $pendientesGeneros > 0): ?>
+// Detección automática de géneros en segundo plano (invisible para el usuario)
 (async function () {
     const estado = document.getElementById("estadoGeneros");
-    let procesados = 0;
+    let guardados = 0;
     try {
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 60; i++) {
             const fd = new FormData();
             fd.append("accion", "procesar");
             fd.append("ajax", "1");
-            const r = await fetch("rellenar_generos.php", { method: "POST", body: fd });
+            const r = await fetch("rellenar_generos.php", { method: "POST", body: fd, credentials: "same-origin" });
             if (!r.ok) break;
             const j = await r.json();
-            procesados += j.procesados;
-            if (estado && j.procesados > 0) {
+            guardados += j.procesados;
+            if (estado) {
                 estado.hidden = false;
-                estado.textContent = "Detectando géneros… quedan " + j.pendientes + " libros";
+                estado.textContent = "Detectando géneros… quedan " + j.pendientes + (j.pausa ? " (en pausa: límite de Google)" : "");
             }
-            if (!j.pendientes || !j.procesados) break;
+            if (j.pausa || !j.pendientes || !j.procesados) break;
+            await new Promise(r => setTimeout(r, 800));
         }
     } catch (e) {}
-    if (procesados > 0) location.reload();
+    if (guardados > 0) location.reload();
 })();
 <?php endif; ?>
 
