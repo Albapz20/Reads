@@ -1,0 +1,21 @@
+{
+  "id": "/Reads/public/",
+  "name": "Reads · Tu espacio para leer",
+  "short_name": "Reads",
+  "description": "Organiza tus lecturas, sigue tu progreso y descubre otros lectores.",
+  "lang": "es",
+  "start_url": "/Reads/public/instalar.php",
+  "scope": "/Reads/public/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffafc",
+  "theme_color": "#8f456d",
+  "icons": [
+    {
+      "src": "/Reads/public/reads-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
