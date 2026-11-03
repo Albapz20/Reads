@@ -2803,7 +2803,7 @@ details.form-lanzamiento summary { font-weight: 700; cursor: pointer; font-size:
 .hm-top h1 span { color: var(--rd-accent); }
 .hm-lema { margin: 0 0 20px; opacity: .75; max-width: 46ch; }
 
-.hm-buscador { position: relative; max-width: 640px; }
+.hm-buscador { position: relative; max-width: 940px; }
 .hm-buscador form { display: flex; gap: 8px; }
 .hm-buscador input[type="text"] {
     flex: 1;
