@@ -51,9 +51,15 @@
         if (faltan && !caja) recargarCuandoPueda(0);
     }
 
-    /*  Solo administrador  */
+    /*  Solo administrador: visible únicamente mientras quedan pendientes  */
     function indicadorAdmin(d) {
         if (!d.admin) return;
+
+        if (d.pendientes <= 0) {
+            if (panelAdmin) { panelAdmin.remove(); panelAdmin = null; }
+            return;
+        }
+
         if (!panelAdmin) {
             panelAdmin = document.createElement('div');
             panelAdmin.style.cssText = 'position:fixed;right:14px;bottom:96px;z-index:999998;padding:6px 12px;' +
@@ -62,9 +68,7 @@
                 'font:600 .75rem system-ui,sans-serif;opacity:.9';
             document.body.appendChild(panelAdmin);
         }
-        panelAdmin.textContent = d.pendientes > 0
-            ? '🖼️ Cola de portadas: ' + d.pendientes + ' pendientes · ' + encontradas + ' encontradas' + (d.pausa ? ' · en pausa' : '')
-            : '🖼️ Cola terminada · ' + encontradas + ' encontradas · ' + (d.sin_portada || 0) + ' libros siguen sin portada real';
+        panelAdmin.textContent = '🖼️ Cola de portadas: ' + d.pendientes + ' pendientes · ' + encontradas + ' encontradas' + (d.pausa ? ' · en pausa' : '');
     }
 
     /*  Barra de progreso  */
@@ -80,6 +84,13 @@
     }
 
     async function paso() {
+        // Si hace menos de 10 min que la cola estaba vacía, no molestar al servidor
+        // (en la página con barra de progreso sí se consulta siempre)
+        if (!caja) {
+            const ultimaVacia = Number(sessionStorage.getItem('readsColaVacia') || 0);
+            if (Date.now() - ultimaVacia < 600000) return;
+        }
+
         if (++vueltas > 600) { aplicarTodas(); return; }
         let d;
         try {
@@ -94,6 +105,10 @@
         acumuladas.push(...nuevas);
         pintarProgreso(d);
         indicadorAdmin(d);
+
+        if (d.pendientes === 0 && !d.pausa) {
+            try { sessionStorage.setItem('readsColaVacia', String(Date.now())); } catch (e) {}
+        }
 
         if (!rapidaAplicada && !d.rapida) { rapidaAplicada = true; aplicarTodas(); }
         else if (d.pendientes === 0 || d.pausa) aplicarTodas();

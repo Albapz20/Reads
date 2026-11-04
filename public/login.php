@@ -28,7 +28,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $mensaje = (is_string($resultado) && $resultado !== '') ? $resultado : 'Email o contraseña incorrectos.';
 }
 
-$recienRegistrado = isset($_GET['registrado']);
+$pendiente       = $_GET['pendiente'] ?? '';   // "1" = email enviado, "error" = fallo al enviar
+$verificado      = isset($_GET['verificado']);
 $cuentaEliminada = isset($_GET['cuenta_eliminada']);
 
 ?>
@@ -66,16 +67,22 @@ $cuentaEliminada = isset($_GET['cuenta_eliminada']);
             <h1>Iniciar sesión</h1>
             <p class="rg-sub">Accede a tu biblioteca.</p>
 
-            <?php if ($recienRegistrado && !$mensaje): ?>
-                <p class="rg-ok" role="status"> ¡Cuenta creada! Ya puedes iniciar sesión.</p>
+            <?php if ($pendiente === '1' && !$mensaje): ?>
+                <p class="rg-ok" role="status">📧 ¡Cuenta creada! Te hemos enviado un email para confirmarla. Revisa también el spam.</p>
+            <?php elseif ($pendiente === 'error' && !$mensaje): ?>
+                <p class="rg-error" role="alert">⚠️ Tu cuenta se creó, pero no hemos podido enviar el email de confirmación. Inténtalo de nuevo más tarde.</p>
+            <?php endif; ?>
+
+            <?php if ($verificado && !$mensaje): ?>
+                <p class="rg-ok" role="status">✅ ¡Correo confirmado! Ya puedes iniciar sesión.</p>
             <?php endif; ?>
 
             <?php if ($cuentaEliminada && !$mensaje): ?>
-            <p class="rg-ok" role="status">Tu cuenta se ha eliminado correctamente.</p>
+                <p class="rg-ok" role="status">Tu cuenta se ha eliminado correctamente.</p>
             <?php endif; ?>
 
             <?php if ($mensaje): ?>
-                <p class="rg-error" role="alert"> <?= htmlspecialchars($mensaje) ?></p>
+                <p class="rg-error" role="alert">⚠️ <?= htmlspecialchars($mensaje) ?></p>
             <?php endif; ?>
 
             <form method="POST" autocomplete="on">

@@ -565,11 +565,11 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
                     <input type="hidden" name="avatar_accion" value="subir">
                     <div class="av-subir">
                         <img id="avPreview" class="av-preview" alt="Vista previa">
-                        <input type="file" name="foto" id="inputFoto" accept="image/jpeg,image/png,image/webp">
+                        <input type="file" name="foto" id="inputFoto" accept="image/*">
                         <button type="submit" class="btn-accion" id="btnSubirFoto" disabled>Usar esta foto</button>
                     </div>
                     <p class="av-error" id="avError"></p>
-                    <p class="av-sub" style="margin:6px 0 0;">JPG, PNG o WebP · máximo 2 MB · se recorta en cuadrado</p>
+                    <p class="av-sub" style="margin:6px 0 0;">Cualquier imagen · se ajusta y se recorta en cuadrado automáticamente</p>
                 </form>
             </div>
 
@@ -733,30 +733,69 @@ document.getElementById('cerrarAvatar').addEventListener('click', () => modalAva
 modalAvatar.addEventListener('click', e => { if (e.target === modalAvatar) modalAvatar.close(); });
 modalAvatar.addEventListener('close', () => document.body.classList.remove('modal-open'));
 
-// Vista previa y límite de 2 MB antes de enviar
+// Vista previa y reducción automática de la imagen antes de enviar
 const inputFoto = document.getElementById('inputFoto');
 const avPreview = document.getElementById('avPreview');
 const avError   = document.getElementById('avError');
 const btnFoto   = document.getElementById('btnSubirFoto');
+const AV_LADO   = 800;   // tamaño final: 800x800 px
 
-inputFoto.addEventListener('change', () => {
+function reducirImagen(archivo) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(archivo);
+        const img = new Image();
+        img.onload = () => {
+            // Recorte cuadrado centrado
+            const lado = Math.min(img.naturalWidth, img.naturalHeight);
+            const sx = (img.naturalWidth - lado) / 2;
+            const sy = (img.naturalHeight - lado) / 2;
+            const salida = Math.min(AV_LADO, lado);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = salida;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';                 // fondo blanco para PNG transparentes
+            ctx.fillRect(0, 0, salida, salida);
+            ctx.drawImage(img, sx, sy, lado, lado, 0, 0, salida, salida);
+            URL.revokeObjectURL(url);
+
+            canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('blob')), 'image/jpeg', 0.9);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+        img.src = url;
+    });
+}
+
+inputFoto.addEventListener('change', async () => {
     const f = inputFoto.files[0];
     avError.textContent = '';
     btnFoto.disabled = true;
     avPreview.classList.remove('visible');
     if (!f) return;
 
-    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
-        avError.textContent = 'Formato no válido. Usa JPG, PNG o WebP.';
+    if (!f.type.startsWith('image/')) {
+        avError.textContent = 'El archivo no es una imagen.';
         return;
     }
-    if (f.size > 2 * 1024 * 1024) {
-        avError.textContent = 'La imagen supera los 2 MB.';
-        return;
+
+    try {
+        avError.textContent = 'Preparando imagen…';
+        const blob = await reducirImagen(f);
+
+        // Sustituye el archivo elegido por la versión reducida
+        const nombre = f.name.replace(/\.[^.]+$/, '') + '.jpg';
+        const reducido = new File([blob], nombre, { type: 'image/jpeg' });
+        const dt = new DataTransfer();
+        dt.items.add(reducido);
+        inputFoto.files = dt.files;
+
+        avPreview.src = URL.createObjectURL(reducido);
+        avPreview.classList.add('visible');
+        avError.textContent = '';
+        btnFoto.disabled = false;
+    } catch (e) {
+        avError.textContent = 'No se pudo leer esa imagen. Prueba con otra (JPG, PNG o WebP).';
     }
-    avPreview.src = URL.createObjectURL(f);
-    avPreview.classList.add('visible');
-    btnFoto.disabled = false;
 });
 
 /*  Utilidades  */

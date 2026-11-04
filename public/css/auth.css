@@ -138,3 +138,14 @@ body.page-login {
 .rg-olvido { display: block; text-align: right; margin: -4px 2px 18px; font-size: .84rem; }
 .rg-olvido a { color: var(--rg-primary); font-weight: 700; text-decoration: none; }
 .rg-olvido a:hover { text-decoration: underline; }
+
+
+.rg-coincide { font-size: .85rem; min-height: 1.2em; margin: -4px 0 12px; }
+.rg-coincide.ok { color: #2fb36d; }
+.rg-coincide.ko { color: #e5484d; }
+
+.rg-fuerza { display: none; height: 4px; margin: 6px 6px 4px; background: rgba(0,0,0,.08); border-radius: 999px; overflow: hidden; }
+.rg-fuerza.visible { display: block; }
+.rg-fuerza i { display: block; height: 100%; width: 0; transition: width .25s, background .25s; }
+.rg-fuerza-texto { font-size: .8rem; margin-bottom: 10px; }
+.rg-fuerza-texto:empty, .rg-coincide:empty { display: none; }

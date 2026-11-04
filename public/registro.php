@@ -1,6 +1,7 @@
 <?php
 require_once "../src/UserService.php";
 require_once "../src/Auth.php";
+require_once "../src/Mailer.php";
 
 $tema = "pastel";
 
@@ -10,17 +11,26 @@ $nombre  = "";
 $email   = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $nombre   = trim((string)($_POST["nombre"] ?? ""));
-    $email    = trim((string)($_POST["email"] ?? ""));
-    $password = (string)($_POST["password"] ?? "");
+    $nombre    = trim((string)($_POST["nombre"] ?? ""));
+    $email     = trim((string)($_POST["email"] ?? ""));
+    $password  = (string)($_POST["password"] ?? "");
+    $password2 = (string)($_POST["password2"] ?? "");
 
-    $resultado = $service->registrar($nombre, $email, $password);
+    if ($password !== $password2) {
+        $mensaje = "Las contraseñas no coinciden.";
+    } elseif (strlen($password) < 8) {
+        $mensaje = "La contraseña debe tener al menos 8 caracteres.";
+    } else {
+        $resultado = $service->registrar($nombre, $email, $password);
 
-    if ($resultado === true) {
-        header("Location: login.php?registrado=1");
-        exit;
+        // Si todo va bien, registrar() devuelve ['email' => ..., 'token' => ...]
+        if (is_array($resultado)) {
+            $enviado = Mailer::enviarVerificacion($resultado["email"], $nombre, $resultado["token"]);
+            header("Location: login.php?pendiente=" . ($enviado ? "1" : "error"));
+            exit;
+        }
+        $mensaje = (string)$resultado;
     }
-    $mensaje = (string)$resultado;
 }
 ?>
 <!DOCTYPE html>
@@ -56,13 +66,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <!-- Formulario -->
         <section class="rg-form-wrap">
             <h1>Crear cuenta</h1>
-            <p class="rg-sub">Es gratis y solo te llevará un minuto.</p>
+            <p class="rg-sub">Es gratis y solo te llevará un minuto. Te enviaremos un email para confirmar tu cuenta.</p>
 
             <?php if ($mensaje): ?>
                 <p class="rg-error" role="alert">⚠️ <?= htmlspecialchars($mensaje) ?></p>
             <?php endif; ?>
 
-            <form method="POST" autocomplete="on">
+            <form method="POST" autocomplete="on" id="rgForm">
 
                 <div class="rg-campo">
                     <span class="ico">👤</span>
@@ -79,12 +89,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <div class="rg-campo">
                     <span class="ico">🔒</span>
                     <input class="rg-input" type="password" name="password" id="rgPassword" placeholder="Contraseña"
-                           autocomplete="new-password" required>
+                           autocomplete="new-password" minlength="8" required>
                     <button type="button" class="rg-ojo" id="rgOjo" aria-label="Mostrar u ocultar la contraseña">👁️</button>
                 </div>
 
                 <div class="rg-fuerza" aria-hidden="true"><i id="rgBarra"></i></div>
                 <div class="rg-fuerza-texto" id="rgFuerzaTexto"></div>
+                <div class="rg-fuerza" id="rgFuerza" aria-hidden="true"><i id="rgBarra"></i></div>
+
+                <div class="rg-campo">
+                    <span class="ico">🔒</span>
+                    <input class="rg-input" type="password" name="password2" id="rgPassword2" placeholder="Repite la contraseña"
+                           autocomplete="new-password" minlength="8" required>
+                </div>
+                <div class="rg-coincide" id="rgCoincide" aria-live="polite"></div>
 
                 <button type="submit" class="rg-boton">Crear mi cuenta</button>
             </form>
@@ -96,17 +114,34 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 </main>
 
 <script>
-    const pass  = document.getElementById('rgPassword');
-    const ojo   = document.getElementById('rgOjo');
-    const barra = document.getElementById('rgBarra');
-    const texto = document.getElementById('rgFuerzaTexto');
+    const pass     = document.getElementById('rgPassword');
+    const pass2    = document.getElementById('rgPassword2');
+    const ojo      = document.getElementById('rgOjo');
+    const barra    = document.getElementById('rgBarra');
+    const texto    = document.getElementById('rgFuerzaTexto');
+    const coincide = document.getElementById('rgCoincide');
+    const form     = document.getElementById('rgForm');
+    const contenedorFuerza = document.getElementById('rgFuerza');
 
-    // Mostrar / ocultar contraseña
+    // Mostrar / ocultar contraseña (afecta a los dos campos)
     ojo.addEventListener('click', () => {
         const oculta = pass.type === 'password';
-        pass.type = oculta ? 'text' : 'password';
+        pass.type  = oculta ? 'text' : 'password';
+        pass2.type = pass.type;
         ojo.textContent = oculta ? '🙈' : '👁️';
     });
+
+    function comprobarCoincidencia() {
+        if (!pass2.value) {
+            coincide.textContent = '';
+            coincide.className = 'rg-coincide';
+            return true;
+        }
+        const ok = pass.value === pass2.value;
+        coincide.textContent = ok ? '✔ Las contraseñas coinciden' : '✖ Las contraseñas no coinciden';
+        coincide.className = 'rg-coincide ' + (ok ? 'ok' : 'ko');
+        return ok;
+    }
 
     pass.addEventListener('input', () => {
         const v = pass.value;
@@ -117,7 +152,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if (/\d/.test(v)) puntos++;
         if (/[^A-Za-z0-9]/.test(v)) puntos++;
 
-        if (!v) { barra.style.width = '0'; texto.textContent = ''; return; }
+        comprobarCoincidencia();
+
+        // Si no hay nada escrito, ocultamos la barra
+        if (!v) {
+            barra.style.width = '0';
+            texto.textContent = '';
+            contenedorFuerza.classList.remove('visible');
+            return;
+        }
+
+        // Si hay texto, mostramos la barra
+        contenedorFuerza.classList.add('visible');
 
         const niveles = [
             { w: '25%',  c: '#e5484d', t: 'Muy débil' },
@@ -131,6 +177,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         barra.style.width = n.w;
         barra.style.background = n.c;
         texto.textContent = 'Seguridad: ' + n.t;
+    });
+
+    pass2.addEventListener('input', comprobarCoincidencia);
+
+    form.addEventListener('submit', (e) => {
+        if (!comprobarCoincidencia()) e.preventDefault();
     });
 </script>
 

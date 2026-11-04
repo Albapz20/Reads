@@ -75,6 +75,8 @@ body.modal-open { overflow: hidden; }
 
 /* Componentes comunes */
 
+/* Componentes comunes */
+
 /* ---- Menú flotante inferior (el mismo en todas las páginas) ---- */
 .floating-nav-container {
     position: fixed !important;
@@ -110,7 +112,7 @@ body.modal-open { overflow: hidden; }
     align-items: center;
     justify-content: center;
     gap: 2px;
-    padding: 8px 4px;
+    padding: 12px 4px;
     text-decoration: none;
     color: #2d3748;
     font-size: .78rem;
@@ -121,7 +123,9 @@ body.modal-open { overflow: hidden; }
     border-radius: 16px;
     transition: color .2s, background .2s, transform .2s;
 }
-.nav-card-float .nav-icon { font-size: 1.3rem; line-height: 1; }
+
+/* Iconos ocultos: solo se ve el nombre de cada apartado */
+.nav-card-float .nav-icon { display: none; }
 
 .nav-card-float:hover {
     color: var(--rd-accent);
@@ -138,18 +142,25 @@ body.modal-open { overflow: hidden; }
 }
 
 @media (max-width: 760px) {
-    .nav-card-float { font-size: .7rem; padding: 8px 2px; }
-    .nav-card-float .nav-icon { font-size: 1.2rem; }
+    .nav-card-float { font-size: .7rem; padding: 12px 2px; }
 }
 
-/* Móvil: solo iconos, y el nombre únicamente en la página actual */
+/* Móvil: con 7 apartados no caben todos los nombres a la vez,
+   así que la barra se desliza horizontalmente */
 @media (max-width: 560px) {
-    .nav-card-float > span:not(.nav-icon) { display: none; }
-    .nav-card-float.active { flex: 2.2 1 0; }
-    .nav-card-float.active > span:not(.nav-icon) { display: inline; }
-    .nav-card-float .nav-icon { font-size: 1.35rem; }
-}
+    .quick-nav-floating {
+        overflow-x: auto;
+        scrollbar-width: none;           /* Firefox */
+        -webkit-overflow-scrolling: touch;
+    }
+    .quick-nav-floating::-webkit-scrollbar { display: none; }  /* Chrome/Android */
 
+    .nav-card-float {
+        flex: 0 0 auto;                  /* cada botón mide lo que ocupa su texto */
+        padding: 12px 10px;
+        font-size: .75rem;
+    }
+}
 /* Barra de progreso (index y perfil) */
 .barra-progreso-bg {
     height: 10px;
@@ -1874,6 +1885,28 @@ a.mg-fila { cursor: pointer; }
 .bs-card h2 { margin: 0 0 4px; font-size: 1.15rem; }
 .bs-sub { margin: 0 0 14px; font-size: .88rem; opacity: .7; }
 
+ .cl-overlay {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0, 0, 0, .45);
+        backdrop-filter: blur(3px);
+    }
+    .cl-overlay[hidden] { display: none; }
+    .cl-caja {
+        background: #fff; color: #222;
+        padding: 28px 36px; border-radius: 18px;
+        text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+        max-width: 85vw;
+    }
+    .cl-caja p { margin: 14px 0 4px; font-weight: 700; font-size: 1.05rem; }
+    .cl-caja small { opacity: .65; }
+    .cl-spinner {
+        width: 42px; height: 42px; margin: 0 auto;
+        border: 4px solid #e5e5e5; border-top-color: #7c5cff;
+        border-radius: 50%; animation: cl-giro .8s linear infinite;
+    }
+    @keyframes cl-giro { to { transform: rotate(360deg); } }
+
 /* Recomendados */
 .rec-scroll { display: flex; gap: 14px; overflow-x: auto; padding: 6px 2px 12px; scrollbar-width: thin; }
 .rec-card { flex: 0 0 120px; text-decoration: none; color: inherit; }
@@ -2343,6 +2376,21 @@ a.vb-credito:hover { text-decoration: underline; opacity: 1; }
 }
 .cal-btn:hover { border-color: var(--rd-accent); }
 .cal-btn.hoy { background: var(--rd-accent); border-color: var(--rd-accent); color: #fff; }
+
+.cal-botones {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    text-align: center;
+}
+.cal-enlace {
+    font-size: .88rem;
+    font-weight: 600;
+    color: var(--rd-accent);
+    text-decoration: none;
+}
+.cal-enlace:hover { text-decoration: underline; }
 
 /* Rejilla */
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }

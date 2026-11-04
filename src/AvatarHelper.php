@@ -2,8 +2,8 @@
 class AvatarHelper
 {
     const EMOJIS = ['📚', '🦉', '🐉', '🦊', '🐱', '🐼', '🦄', '🌸', '🌿', '☕', '🔮', '🌙', '⭐', '🔥', '🎧', '🧙', '🧛', '🚀'];
-    const MAX_BYTES = 2097152;   
-    const TAM = 256;            
+    const MAX_BYTES =  10485760;   // 10 MB
+    const TAM = 512;            
 
     public static function token(): string
     {
@@ -121,7 +121,7 @@ class AvatarHelper
         $codigo = $f['error'] ?? UPLOAD_ERR_NO_FILE;
         if ($codigo === UPLOAD_ERR_NO_FILE) return ['ok' => false, 'error' => 'Selecciona una imagen primero.'];
         if ($codigo !== UPLOAD_ERR_OK)      return ['ok' => false, 'error' => 'No se pudo subir la imagen. Inténtalo de nuevo.'];
-        if (($f['size'] ?? 0) > self::MAX_BYTES) return ['ok' => false, 'error' => 'La imagen supera los 2 MB.'];
+       if (($f['size'] ?? 0) > self::MAX_BYTES) return ['ok' => false, 'error' => 'La imagen es demasiado grande.'];
         if (!function_exists('imagecreatefromstring')) {
             return ['ok' => false, 'error' => 'El servidor no tiene la extensión GD activada (php.ini: extension=gd).'];
         }

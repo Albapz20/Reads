@@ -1,2 +1,2 @@
 config/config.local.php
-public/diagnostico_descripcion.php
+config/config_mail.php

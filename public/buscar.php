@@ -185,6 +185,15 @@ $generos = ['Romance', 'Fantasía', 'Thriller', 'Ciencia ficción', 'Novela hist
 
 </div><!-- /bs-wrap -->
 
+<!-- Overlay de carga de libro -->
+<div id="cargandoLibro" class="cl-overlay" hidden>
+    <div class="cl-caja">
+        <div class="cl-spinner"></div>
+        <p>Cargando libro…</p>
+        <small>Puede tardar unos segundos</small>
+    </div>
+</div>
+
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
@@ -276,6 +285,27 @@ function escapeHtml(t) {
 })();
 </script>
 <?php endif; ?>
+
+<script>
+(function () {
+    const overlay = document.getElementById('cargandoLibro');
+
+    function mostrar() { overlay.hidden = false; }
+    function ocultar() { overlay.hidden = true; }
+
+    // Cualquier enlace que lleve a libro.php (resultados, recomendados, "Ver más"...)
+    document.addEventListener('click', function (e) {
+        const a = e.target.closest('a[href*="libro.php"]');
+        if (!a) return;
+        // Ignorar clics con Ctrl/Cmd/Shift o botón central (abren pestaña nueva)
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+        mostrar();
+    });
+
+    // Si el usuario vuelve atrás, el navegador puede restaurar la página con el overlay visible
+    window.addEventListener('pageshow', ocultar);
+})();
+</script>
 
 </body>
 </html>

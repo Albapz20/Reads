@@ -33,6 +33,7 @@ $siguiendoN    = $comunidad->contadores((int)$usuario["id"])['siguiendo'];
 // Año actual para métricas dinámicas
 $year = date("Y");
 $diaDelAno = date("z") + 1; // Días transcurridos en el año actual
+$hoyStr = date('Y-m-d');
 
 // Libros que el usuario está leyendo actualmente
 $sqlMisLecturas = "SELECT l.* 
@@ -238,6 +239,38 @@ $wuTextoCompartir = "Mi Wrap Up {$anioWrap}: {$wuTotalLibros} libros, "
     . ($wuMesTop ? " Mes estrella: {$mesesNombre[$wuMesTop]}." : '')
     . " #Reads";
 
+/* Calendario: lectura de hoy, racha y próximos lanzamientos */
+$stmtHoy = $db->pdo->prepare("SELECT COALESCE(SUM(paginas_leidas), 0) FROM diario_lectura WHERE usuario_id = ? AND fecha = ?");
+$stmtHoy->execute([$usuario["id"], $hoyStr]);
+$anotadoHoy = ((int)$stmtHoy->fetchColumn() > 0);
+
+$stmtRachaCal = $db->pdo->prepare("SELECT DISTINCT fecha FROM diario_lectura WHERE usuario_id = ? AND fecha <= ? ORDER BY fecha DESC LIMIT 400");
+$stmtRachaCal->execute([$usuario["id"], $hoyStr]);
+$fechasLectura = array_flip($stmtRachaCal->fetchAll(PDO::FETCH_COLUMN));
+$rachaCal = 0;
+$cursorCal = new DateTime($hoyStr);
+if (!isset($fechasLectura[$cursorCal->format('Y-m-d')])) $cursorCal->modify('-1 day'); // si hoy aún no has anotado, cuenta desde ayer
+while (isset($fechasLectura[$cursorCal->format('Y-m-d')])) {
+    $rachaCal++;
+    $cursorCal->modify('-1 day');
+}
+
+$stmtProx = $db->pdo->prepare("SELECT titulo, fecha_lanzamiento
+                               FROM lanzamientos_deseados
+                               WHERE usuario_id = ? AND fecha_lanzamiento >= ?
+                               ORDER BY fecha_lanzamiento ASC LIMIT 3");
+$stmtProx->execute([$usuario["id"], $hoyStr]);
+$proxLanz = $stmtProx->fetchAll(PDO::FETCH_ASSOC);
+
+if (!function_exists('textoCuentaAtras')) {
+    function textoCuentaAtras(string $fecha): string {
+        $dias = (int)((strtotime($fecha) - strtotime(date('Y-m-d'))) / 86400);
+        if ($dias <= 0) return '¡Hoy!';
+        if ($dias === 1) return 'Mañana';
+        return "En {$dias} días";
+    }
+}
+
 if (!function_exists('e')) {
     function e($texto) {
         return htmlspecialchars($texto ?? '', ENT_QUOTES, 'UTF-8');
@@ -410,7 +443,7 @@ if (!function_exists('e')) {
 
                 <?php if ($wuTotalLibros === 0): ?>
                     <div class="wu-vacio">
-                                                <p>Todavía no has terminado ningún libro en <?= $anioWrap ?>.<br>Márcalos como <strong>leídos</strong> con su fecha de fin y aquí aparecerá tu resumen del año.</p>
+                        <p>Todavía no has terminado ningún libro en <?= $anioWrap ?>.<br>Márcalos como <strong>leídos</strong> con su fecha de fin y aquí aparecerá tu resumen del año.</p>
                         <a href="biblioteca.php" class="hm-btn">Ir a mi estantería</a>
                     </div>
                 <?php else: ?>
@@ -501,6 +534,7 @@ if (!function_exists('e')) {
             <section class="hm-bloque hm-reto" aria-labelledby="t-reto">
                 <div class="hm-sec-head">
                     <h2 id="t-reto">Reto <?= $year ?></h2>
+                    <a href="estadisticas.php">Ver estadísticas</a>
                 </div>
 
                 <div class="hm-anillo" role="img" aria-label="<?= $librosLeidos ?> de <?= $objetivoAnual ?> libros, <?= $porcentajeReto ?>%">
@@ -525,6 +559,45 @@ if (!function_exists('e')) {
                     <li><span>Media por libro</span><strong><?= $promedioPaginasPorLibro ?> págs</strong></li>
                     <li><span>Proyección a fin de año</span><strong>~<?= $proyeccionLibros ?> libros</strong></li>
                 </ul>
+            </section>
+
+            <!-- Calendario -->
+            <section class="hm-bloque" aria-labelledby="t-cal">
+                <div class="hm-sec-head">
+                    <h2 id="t-cal">Calendario</h2>
+                </div>
+
+                <div class="cal-hoy">
+                    <div class="cal-fecha">
+                        <strong><?= (int)date('j') ?></strong>
+                        <small><?= e(mb_substr($mesesNombre[(int)date('n')], 0, 3)) ?></small>
+                    </div>
+                    <div class="cal-texto">
+                        <span><?= e(ucfirst($diasSemana[(int)date('N')])) ?></span>
+                        <small>
+                            <?= $anotadoHoy ? 'Hoy ya has anotado lectura ✔' : 'Aún no has anotado lectura hoy' ?>
+                            <?php if ($rachaCal > 0): ?>
+                                · Racha: <?= $rachaCal ?> <?= $rachaCal === 1 ? 'día' : 'días' ?>
+                            <?php endif; ?>
+                        </small>
+                    </div>
+                </div>
+
+                <?php if (!empty($proxLanz)): ?>
+                    <ul class="cal-lista">
+                        <?php foreach ($proxLanz as $lz): ?>
+                            <li>
+                                <span class="cal-dia"><?= e(textoCuentaAtras($lz['fecha_lanzamiento'])) ?></span>
+                                <span class="cal-titulo"><?= e($lz['titulo']) ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+
+                <div class="cal-botones">
+                    <a href="calendario.php?hoy=1" class="hm-btn">Anotar lectura de hoy</a>
+                    <a href="calendario.php" class="cal-enlace">Ver calendario</a>
+                </div>
             </section>
 
             <!-- Comunidad -->
@@ -562,13 +635,9 @@ if (!function_exists('e')) {
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
         <a href="index.php" class="nav-card-float active"><span class="nav-icon">🏠</span><span>Inicio</span></a>
-        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
-        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
-        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
-        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
-        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
+        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Estantería</span></a>
         <a href="comunidad.php" class="nav-card-float"><span class="nav-icon">👥</span><span>Comunidad</span></a>
-        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
     </nav>
 </div>
 

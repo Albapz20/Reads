@@ -399,28 +399,10 @@ function textoCuentaAtras(string $fecha): string {
             <span class="nav-icon">📚</span>
             <span>Mi estantería</span>
         </a>
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        
-        <a href="calendario.php" class="nav-card-float active">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>   
-        </a>
-        
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
 
         <a href="comunidad.php" class="nav-card-float">
             <span class="nav-icon">👥</span>
             <span>Comunidad</span>
-        </a>
-
-          <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
         </a>
     </nav>
 </div>
@@ -527,6 +509,14 @@ const btnCancelar = document.getElementById('btnCancelar');
 if (btnCancelar) btnCancelar.addEventListener('click', () => modal.close());
 modal.addEventListener('click', e => { if (e.target === modal) modal.close(); });
 modal.addEventListener('close', () => document.body.classList.remove('modal-open'));
+
+// Si venimos del botón "Anotar lectura de hoy" de Inicio, abre el día de hoy
+if (new URLSearchParams(location.search).has('hoy')) {
+    const hoy = new Date();
+    if (hoy.getMonth() + 1 === MES && hoy.getFullYear() === ANIO) {
+        abrirDia(hoy.getDate());
+    }
+}
 </script>
 
 </body>
