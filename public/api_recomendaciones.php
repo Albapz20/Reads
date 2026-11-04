@@ -68,7 +68,7 @@ if ($apiKey === '') {
         }
     }
 }
-   if (strpos($apiKey, 'AIzaSyDGLIzZKxCsoOSY3bqMqerXeDXeIZGsk0E') !== false) $apiKey = '';
+   if (strpos($apiKey, '') !== false) $apiKey = '';
 
 /* Recomendar */
 $service   = new RecomendacionesService($db->pdo, $apiKey);
