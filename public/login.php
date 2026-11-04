@@ -39,6 +39,7 @@ $cuentaEliminada = isset($_GET['cuenta_eliminada']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar sesión · Reads</title>
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/auth.css?v=<?= @filemtime(__DIR__ . '/css/auth.css') ?>">
@@ -76,6 +77,13 @@ $cuentaEliminada = isset($_GET['cuenta_eliminada']);
             <?php if ($verificado && !$mensaje): ?>
                 <p class="rg-ok" role="status">✅ ¡Correo confirmado! Ya puedes iniciar sesión.</p>
             <?php endif; ?>
+            
+            <?php if ($mensaje): ?>
+   				 <p class="rg-error" role="alert">⚠️ <?= htmlspecialchars($mensaje) ?></p>
+    		<?php if (strpos($mensaje, 'confirmar tu correo') !== false): ?>
+       		 <p class="rg-sub"><a href="reenviar.php?email=<?= urlencode($email) ?>">Reenviar el email de confirmación</a></p>
+   			 <?php endif; ?>
+			<?php endif; ?>
 
             <?php if ($cuentaEliminada && !$mensaje): ?>
                 <p class="rg-ok" role="status">Tu cuenta se ha eliminado correctamente.</p>

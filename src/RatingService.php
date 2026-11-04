@@ -11,7 +11,7 @@ class RatingService {
     }
 
     // Guardar o actualizar puntuación estilo Mistbook
-    public function guardarPuntuacion($usuarioId, $libroId, $estrellas, $romance, $spicy, $lagrimas = 0, $plotTwist = 0) {
+    public function guardarPuntuacion($usuarioId, $libroId, $estrellas, $romance, $spicy, $lagrimas = 0, $plotTwist = 0, $humor = 0, $tension = 0) {
 
         // Comprobar si ya existe una puntuación
         $sql = "SELECT id FROM puntuaciones WHERE usuario_id = ? AND libro_id = ?";
@@ -21,16 +21,16 @@ class RatingService {
         if ($stmt->fetch()) {
             // Actualizar
             $sql = "UPDATE puntuaciones 
-                    SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?
+                    SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?, humor = ?, tension = ?
                     WHERE usuario_id = ? AND libro_id = ?";
             $stmt = $this->db->pdo->prepare($sql);
-            $stmt->execute([$estrellas, $romance, $spicy, $lagrimas, $plotTwist, $usuarioId, $libroId]);
+            $stmt->execute([$estrellas, $romance, $spicy, $lagrimas, $plotTwist, $humor, $tension, $usuarioId, $libroId]);
         } else {
             // Insertar
-            $sql = "INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+            $sql = "INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             $stmt = $this->db->pdo->prepare($sql);
-            $stmt->execute([$usuarioId, $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist]);
+            $stmt->execute([$usuarioId, $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist, $humor, $tension]);
         }
 
         return true;
@@ -51,7 +51,9 @@ class RatingService {
                     AVG(romance) AS media_romance,
                     AVG(spicy) AS media_spicy,
                     AVG(lagrimas) AS media_lagrimas,
-                    AVG(plot_twist) AS media_plot_twist
+                    AVG(plot_twist) AS media_plot_twist,
+                    AVG(humor) AS media_humor,
+                    AVG(tension) AS media_tension
                 FROM puntuaciones
                 WHERE libro_id = ?";
         $stmt = $this->db->pdo->prepare($sql);

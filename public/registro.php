@@ -39,6 +39,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crear cuenta · Reads</title>
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/auth.css?v=<?= @filemtime(__DIR__ . '/css/auth.css') ?>">
@@ -80,7 +81,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                            value="<?= htmlspecialchars($nombre) ?>" autocomplete="name" required>
                 </div>
 
-                <div class="rg-campo">
+               <div class="rg-campo">
                     <span class="ico">✉️</span>
                     <input class="rg-input" type="email" name="email" placeholder="Correo electrónico"
                            value="<?= htmlspecialchars($email) ?>" autocomplete="email" required>

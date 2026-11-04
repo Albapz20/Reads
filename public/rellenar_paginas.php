@@ -60,7 +60,7 @@ $pendientesLista = array_values(array_filter($candidatos, function ($l) use ($co
     return !isset($comprobados[$l['id']]) || (time() - $comprobados[$l['id']]) >= 6 * 3600;
 }));
 
-$lote = array_slice($pendientesLista, 0, 2);
+$lote = array_slice($pendientesLista, 0, 1);
 $actualizados = 0;
 $marcas = [];
 $aviso = '';

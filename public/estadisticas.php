@@ -379,6 +379,7 @@ function urlEstadisticas(array $cambios): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="main.js"></script>
 <title>Estadísticas de lectura</title>
+    <?php include __DIR__ . '/pwa_head.php'; ?>
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -582,7 +583,8 @@ function urlEstadisticas(array $cambios): string {
                 <p class="mapa-pie">
                     <?= (int)$librosConGenero ?> <?= $librosConGenero === 1 ? 'libro' : 'libros' ?> con género
                     <?php if ($esAdmin && $librosSinGenero > 0): ?> · <?= (int)$librosSinGenero ?> sin género · <a href="rellenar_generos.php">Completar</a><?php endif; ?>
-                    · Cuanto más grande la burbuja, más libros de ese género (un libro puede tener varios). Pulsa un género para ver sus libros.
+                   <span class="solo-escritorio">· Cuanto más grande la burbuja, más libros de ese género (un libro puede tener varios).</span>
+· Pulsa un género para ver sus libros.
                 </p>
             <?php endif; ?>
             <?php if ($colGeneros !== null && $esAdmin): ?><p class="mapa-pie" id="estadoGeneros" hidden></p><?php endif; ?>
@@ -635,37 +637,22 @@ function urlEstadisticas(array $cambios): string {
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-        <a href="index.php" class="nav-card-float">
+        <a href="index.php" class="nav-card-float active">
             <span class="nav-icon">🏠</span>
             <span>Inicio</span>
         </a>
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
+            <span>Perfil</span>
         </a>
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
+            <span>Estantería</span>
         </a>
-        <a href="estadisticas.php" class="nav-card-float active">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        </a>
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>
-        </a>
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
+       
         <a href="comunidad.php" class="nav-card-float">
             <span class="nav-icon">👥</span>
             <span>Comunidad</span>
-        </a>
-        <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
         </a>
     </nav>
 </div>
@@ -825,8 +812,8 @@ new Chart(ctxMeses, {
     let primera = true;
     function pintarBurbujas() {
         burbujas.textContent = "";
-        const W = burbujas.clientWidth, H = burbujas.clientHeight;
-        if (!W || !H) return;
+        const W = burbujas.clientWidth;
+		if (!W) return;
 
         const maxN = Math.max.apply(null, datos.map(d => d.n));
         const items = datos.map((d, i) => ({ d: d, i: i, r: 28 + Math.sqrt(d.n / maxN) * 72 }));
@@ -834,7 +821,18 @@ new Chart(ctxMeses, {
 
         const minX = Math.min.apply(null, items.map(c => c.x - c.r)), maxX = Math.max.apply(null, items.map(c => c.x + c.r));
         const minY = Math.min.apply(null, items.map(c => c.y - c.r)), maxY = Math.max.apply(null, items.map(c => c.y + c.r));
-        const esc = Math.min(W / (maxX - minX), H / (maxY - minY));
+        let H, esc;
+if (window.innerWidth <= 560) {
+    // Móvil: la altura se ajusta al grupo de burbujas, sin espacio sobrante
+    esc = Math.min(1.2, W / (maxX - minX));
+    H = (maxY - minY) * esc + 12;
+    burbujas.style.height = Math.round(H) + "px";
+} else {
+    // Escritorio: igual que antes
+    burbujas.style.height = "";
+    H = burbujas.clientHeight;
+    esc = Math.min(W / (maxX - minX), H / (maxY - minY));
+}
         const ox = W / 2 - ((minX + maxX) / 2) * esc, oy = H / 2 - ((minY + maxY) / 2) * esc;
 
         items.forEach(function (c) {
@@ -856,7 +854,8 @@ new Chart(ctxMeses, {
             emo.style.fontSize = (diam >= 70 ? diam * 0.32 : diam * 0.45) + "px";
             el.appendChild(emo);
 
-            if (diam >= 100) {
+             const umbralNombre = window.innerWidth <= 560 ? 70 : 100;
+            if (diam >= umbralNombre) {
                 const nom = document.createElement("span"); nom.className = "b-nom"; nom.textContent = d.nombre;
                 const num = document.createElement("span"); num.className = "b-num"; num.textContent = textoLibros(d.n);
                 el.appendChild(nom); el.appendChild(num);
@@ -915,7 +914,7 @@ async function completarPaginas(incluir300) {
     let actualizados = 0, vueltas = 0, intentados = 0, aviso = '', fallo = '';
     try {
         // Máximo 10 llamadas (20 libros) por visita, para cuidar la cuota diaria de Google
-        for (; vueltas < 10; vueltas++) {
+        for (; vueltas < 20; vueltas++) {
             const fd = new FormData();
             fd.append("csrf", CSRF_PAGINAS);
             if (incluir300) fd.append("incluir300", "1");
@@ -935,22 +934,23 @@ async function completarPaginas(incluir300) {
             await new Promise(r => setTimeout(r, 1500));   // pausa para no agotar el límite por minuto de Google
         }
     } catch (e) {
-        fallo = 'Respuesta no válida del servidor: probablemente un aviso o error de PHP en rellenar_paginas.php o PaginasService.php.';
+        fallo = 'Respuesta no válida del servidor.';
     }
 
-    buscandoPaginas = false;
+       buscandoPaginas = false;
     if (actualizados > 0) {
         location.reload();
-    } else if (estado && fallo) {
-        estado.hidden = false;
-        estado.textContent = "No se pudieron buscar las páginas: " + fallo;
-    } else if (estado) {
+        return;
+    }
+
+    // Los errores solo se registran en la consola, el usuario no los ve
+    if (fallo) console.warn("rellenar_paginas:", fallo);
+
+    if (estado) {
+        // Solo se muestra algo si el usuario pulsó "Revisar con datos exactos"
         if (incluir300) {
             estado.hidden = false;
             estado.textContent = "Revisión terminada: no hay datos exactos distintos de 300 páginas.";
-        } else if (intentados > 0) {
-            estado.hidden = false;
-            estado.textContent = "No se han encontrado las páginas de " + intentados + " libros ahora mismo." + (aviso ? " " + aviso : "");
         } else {
             estado.hidden = true;
         }

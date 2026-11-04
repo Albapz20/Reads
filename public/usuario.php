@@ -14,7 +14,7 @@ if (!$usuario) {
 $yo = (int)$usuario["id"];
 $id = (int)($_GET['id'] ?? 0);
 
-if ($id === $yo) {            // tu propio perfil está en perfil.php
+if ($id === $yo) {           
     header("Location: perfil.php");
     exit;
 }
@@ -60,6 +60,7 @@ function pfEstanteria(array $libros): string
     <link rel="stylesheet" href="/Reads/temas/<?= cmH($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/comunidad.css?v=<?= @filemtime(__DIR__ . '/css/comunidad.css') ?>">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <script src="main.js"></script>
     <title><?= $p ? cmH($nombre) . ' · Lector' : 'Lector no encontrado' ?></title>
 </head>
@@ -129,13 +130,13 @@ function pfEstanteria(array $libros): string
 
             <!-- Afinidad -->
             <section class="bs-card">
-                <h2>💞 Afinidad lectora contigo</h2>
+                <h2> Afinidad lectora contigo</h2>
                 <?php if ($af): ?>
                     <div class="pf-afinidad" style="margin-top:12px;">
                         <?= cmAnillo((int)$af['indice'], $af['indice'] . '%', 'afinidad') ?>
                         <div class="texto">
-                            <p>📚 <strong><?= (int)$af['libros'] ?></strong> <?= $af['libros'] === 1 ? 'libro' : 'libros' ?> en común</p>
-                            <p>✍️ <strong><?= (int)$af['autores'] ?></strong> <?= $af['autores'] === 1 ? 'autor' : 'autores' ?> en común</p>
+                            <p> <strong><?= (int)$af['libros'] ?></strong> <?= $af['libros'] === 1 ? 'libro' : 'libros' ?> en común</p>
+                            <p>✍ <strong><?= (int)$af['autores'] ?></strong> <?= $af['autores'] === 1 ? 'autor' : 'autores' ?> en común</p>
                             <small style="opacity:.65;">
                                 <?php
                                     echo $af['indice'] >= 60 ? 'Casi gemelos lectores ✨'
@@ -165,7 +166,7 @@ function pfEstanteria(array $libros): string
 
             <!-- Leyendo ahora -->
             <section class="bs-card">
-                <h2>📖 Leyendo ahora</h2>
+                <h2> Leyendo ahora</h2>
                 <?php if (empty($p['leyendo'])): ?>
                     <p class="cm-vacio"><?= cmH($nombre) ?> no está leyendo ningún libro ahora mismo.</p>
                 <?php else: ?>
@@ -177,7 +178,7 @@ function pfEstanteria(array $libros): string
 
             <!-- Últimos leídos -->
             <section class="bs-card">
-                <h2>✅ Últimos libros leídos</h2>
+                <h2> Últimos libros leídos</h2>
                 <?php if (empty($p['recientes'])): ?>
                     <p class="cm-vacio">Todavía no ha terminado ningún libro.</p>
                 <?php else: ?>
@@ -188,18 +189,18 @@ function pfEstanteria(array $libros): string
             <!-- Quiere leer -->
             <?php if (!empty($p['quiere'])): ?>
             <section class="bs-card">
-                <h2>🎯 Quiere leer</h2>
+                <h2> Quiere leer</h2>
                 <?= pfEstanteria($p['quiere']) ?>
             </section>
             <?php endif; ?>
         </div>
 
-        <!-- ================= Columna lateral ================= -->
+        <!--  Columna lateral  -->
         <aside class="pf-side">
 
             <!-- Reto anual -->
             <section class="bs-card">
-                <h2>🎯 Reto <?= $p['anio'] ?></h2>
+                <h2> Reto <?= $p['anio'] ?></h2>
                 <div class="pf-reto" style="margin-top:12px;">
                     <?= cmAnillo($pctReto, $pctReto . '%') ?>
                     <p><strong><?= $p['leidos_anio'] ?></strong> de <?= $p['objetivo'] ?> libros</p>
@@ -208,20 +209,20 @@ function pfEstanteria(array $libros): string
 
             <!-- Estanterías -->
             <section class="bs-card">
-                <h2>📚 Su estantería</h2>
+                <h2> Su estantería</h2>
                 <ul class="pf-estantes">
-                    <li><span>✅ Leídos</span><strong><?= $e['leido'] ?></strong></li>
-                    <li><span>📖 Leyendo</span><strong><?= $e['leyendo'] ?></strong></li>
-                    <li><span>🎯 TBR</span><strong><?= $e['tbr'] ?></strong></li>
-                    <li><span>🎁 Wishlist</span><strong><?= $e['guardado'] ?></strong></li>
-                    <?php if ($e['abandonado'] > 0): ?><li><span>❌ Abandonados</span><strong><?= $e['abandonado'] ?></strong></li><?php endif; ?>
+                    <li><span> Leídos</span><strong><?= $e['leido'] ?></strong></li>
+                    <li><span> Leyendo</span><strong><?= $e['leyendo'] ?></strong></li>
+                    <li><span> TBR</span><strong><?= $e['tbr'] ?></strong></li>
+                    <li><span> Wishlist</span><strong><?= $e['guardado'] ?></strong></li>
+                    <?php if ($e['abandonado'] > 0): ?><li><span> Abandonados</span><strong><?= $e['abandonado'] ?></strong></li><?php endif; ?>
                 </ul>
             </section>
 
             <!-- Géneros -->
             <?php if (!empty($p['generos'])): ?>
             <section class="bs-card">
-                <h2>🏷️ Géneros favoritos</h2>
+                <h2> Géneros favoritos</h2>
                 <div class="pf-chips">
                     <?php foreach ($p['generos'] as $g => $n): ?>
                         <span class="pf-chip">
@@ -235,9 +236,9 @@ function pfEstanteria(array $libros): string
             <!-- Autor favorito -->
             <?php if ($p['autor_top']): ?>
             <section class="bs-card">
-                <h2>✍️ Autor más leído</h2>
+                <h2> Autor más leído</h2>
                 <div class="pf-autor">
-                    <span class="ico">🏅</span>
+                  
                     <div>
                         <a href="autor.php?nombre=<?= urlencode($p['autor_top']) ?>"><?= cmH($p['autor_top']) ?></a>
                         <small><?= (int)$p['autor_top_n'] ?> <?= $p['autor_top_n'] === 1 ? 'libro' : 'libros' ?></small>
@@ -248,7 +249,7 @@ function pfEstanteria(array $libros): string
 
             <!-- Ritmo mensual -->
             <section class="bs-card">
-                <h2>📅 Su <?= $p['anio'] ?> mes a mes</h2>
+                <h2> Su <?= $p['anio'] ?> mes a mes</h2>
                 <div class="pf-meses">
                     <?php foreach ($p['meses'] as $m => $c): ?>
                         <div class="pf-mes <?= $m === $topMes ? 'top' : '' ?>" title="<?= ucfirst($mesesNombre[$m - 1]) ?>: <?= $c ?>">
@@ -278,10 +279,6 @@ function pfEstanteria(array $libros): string
         <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
         <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
         <a href="comunidad.php" class="nav-card-float active"><span class="nav-icon">👥</span><span>Comunidad</span></a>
-        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
-        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
-        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
-        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
     </nav>
 </div>
 

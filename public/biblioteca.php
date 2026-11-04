@@ -208,6 +208,7 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
 <script src="main.js"></script>
@@ -224,7 +225,7 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
                 <?= $totalLibros ?> <?= $totalLibros === 1 ? 'libro' : 'libros' ?>
                 <?php if ($estado === 'leido' && $totalPaginas > 0): ?> · <?= number_format($totalPaginas, 0, '', '.') ?> páginas<?php endif; ?>
                 <?php if ($hayFiltroGenero): ?> · <?= $generoSel === '__sin__' ? 'Sin género' : e($generoSel) ?> (<a href="<?= e($quitarFiltroUrl) ?>">quitar filtro</a>)<?php endif; ?>
-                <span id="estadoGeneros" hidden></span>
+             
             </p>
         </div>
 
@@ -318,34 +319,15 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
+            <span>Perfil</span>
         </a>
         <a href="biblioteca.php" class="nav-card-float active">
             <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
+            <span>Estantería</span>
         </a>
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        </a>
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>
-        </a>
-
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-        </a>
-
         <a href="comunidad.php" class="nav-card-float">
             <span class="nav-icon">👥</span>
             <span>Comunidad</span>
-        </a>
-
-        <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
         </a>
     </nav>
 </div>
@@ -576,9 +558,8 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
 })();
 
 <?php if ($colGen !== null && $sinGeneroCuenta > 0): ?>
-// Detección automática de géneros en segundo plano (libros que aún no tienen género)
+// Detección automática de géneros en segundo plano (invisible para el usuario)
 (async function () {
-    const estado = document.getElementById("estadoGeneros");
     let procesados = 0;
     try {
         for (let i = 0; i < 40; i++) {
@@ -589,10 +570,6 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
             if (!r.ok) break;
             const j = await r.json();
             procesados += j.procesados;
-            if (estado && j.procesados > 0) {
-                estado.hidden = false;
-                estado.textContent = " · 🔎 Detectando géneros… quedan " + j.pendientes;
-            }
             if (!j.pendientes || !j.procesados) break;
         }
     } catch (e) {}
@@ -600,6 +577,7 @@ function generarEstanteria(array $libros, string $estado, bool $hayFiltro = fals
     if (procesados > 0 && !(dlg && dlg.open)) location.reload();
 })();
 <?php endif; ?>
+    
 </script>
    <script src="/Reads/public/portadas_cola.js" defer></script>
 </body>

@@ -445,6 +445,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <?php include __DIR__ . '/pwa_head.php'; ?>
     <title>Ajustes de la aplicación</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
@@ -654,14 +655,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 <!-- Navegación flotante -->
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
-        <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
-        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
-        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
-        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
-        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
-        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
+        <a href="index.php" class="nav-card-float active"><span class="nav-icon">🏠</span><span>Inicio</span></a>
+        <a href="perfil.php" class="nav-card-float"><span class="nav-icon">👤</span><span>Perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Estantería</span></a>
         <a href="comunidad.php" class="nav-card-float"><span class="nav-icon">👥</span><span>Comunidad</span></a>
-        <a href="ajustes.php" class="nav-card-float active"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
     </nav>
 </div>
 

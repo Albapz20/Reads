@@ -282,6 +282,7 @@ if (!function_exists('e')) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <script src="main.js"></script>
@@ -714,6 +715,50 @@ if (input && sugerencias) {
     });
 }
 
+    // Plan B: si el servidor no encuentra nada, busca el propio navegador en Open Library
+async function recomendarDesdeNavegador(data) {
+    const base = data.baseInfo || [];
+    const idioma = data.idiomaOl || '';
+    const titulosBase = new Set(base.map(b => (b.titulo || '').toLowerCase()));
+    const vistos = new Set(titulosBase);
+    const urls = [];
+
+    base.forEach(b => {
+        const lang = idioma ? `&language=${encodeURIComponent(idioma)}` : '';
+        const campos = '&fields=key,title,author_name,cover_i&limit=20';
+        if (b.autor) urls.push(`https://openlibrary.org/search.json?author=${encodeURIComponent(b.autor)}${lang}${campos}`);
+        (b.generos || []).slice(0, 1).forEach(g =>
+            urls.push(`https://openlibrary.org/search.json?subject=${encodeURIComponent(g)}${lang}${campos}&sort=rating`));
+    });
+
+    const respuestas = await Promise.all(urls.map(u =>
+        fetch(u).then(r => r.ok ? r.json() : { docs: [] }).catch(() => ({ docs: [] }))
+    ));
+
+    // Alterna entre las búsquedas para mezclar autor y género
+    const listas = respuestas.map(r => r.docs || []);
+    const salida = [];
+    const max = Math.max(0, ...listas.map(l => l.length));
+    for (let k = 0; k < max && salida.length < 12; k++) {
+        for (const lista of listas) {
+            const d = lista[k];
+            if (!d || !d.title || !d.cover_i) continue;
+            const clave = d.title.toLowerCase();
+            if (vistos.has(clave)) continue;
+            vistos.add(clave);
+            const autor = (d.author_name && d.author_name[0]) || 'Autor desconocido';
+            salida.push({
+                titulo: d.title,
+                autor: autor,
+                portada: `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`,
+                url: `buscar.php?q=${encodeURIComponent(d.title + ' ' + autor)}`
+            });
+            if (salida.length >= 12) break;
+        }
+    }
+    return salida;
+}
+    
 // Cargar recomendaciones basadas en lecturas recientes
 async function cargarRecomendaciones() {
     const contenedorRec = document.getElementById('carrusel-recomendados');
@@ -726,7 +771,10 @@ async function cargarRecomendaciones() {
 
         const data = await res.json();
         const base = data.basadoEn || [];
-        const libros = data.libros || [];
+        let libros = data.libros || [];
+if (libros.length === 0 && (data.baseInfo || []).length > 0) {
+    libros = await recomendarDesdeNavegador(data);
+}
 
         if (subtituloRec) {
             if (base.length === 0) {

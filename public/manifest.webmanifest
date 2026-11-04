@@ -1,21 +1,18 @@
 {
   "id": "/Reads/public/",
-  "name": "Reads · Tu espacio para leer",
+  "name": "Reads - Tu espacio para leer",
   "short_name": "Reads",
   "description": "Organiza tus lecturas, sigue tu progreso y descubre otros lectores.",
   "lang": "es",
-  "start_url": "/Reads/public/instalar.php",
+  "start_url": "/Reads/public/login.php",
   "scope": "/Reads/public/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#fffafc",
   "theme_color": "#8f456d",
   "icons": [
-    {
-      "src": "/Reads/public/reads-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/Reads/public/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/Reads/public/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/Reads/public/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/Reads/public/reads-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

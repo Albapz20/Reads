@@ -231,6 +231,7 @@ function textoCuentaAtras(string $fecha): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
 <title>Calendario de Lectura</title>
 <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
 <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
@@ -391,13 +392,13 @@ function textoCuentaAtras(string $fecha): string {
             <span>Inicio</span>
         </a>
 
-        <a href="perfil.php" class="nav-card-float">
+        <a href="perfil.php" class="nav-card-float active">
             <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
+            <span>Perfil</span>
         </a>
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
+            <span>Estantería</span>
         </a>
 
         <a href="comunidad.php" class="nav-card-float">
@@ -509,8 +510,8 @@ const btnCancelar = document.getElementById('btnCancelar');
 if (btnCancelar) btnCancelar.addEventListener('click', () => modal.close());
 modal.addEventListener('click', e => { if (e.target === modal) modal.close(); });
 modal.addEventListener('close', () => document.body.classList.remove('modal-open'));
-
-// Si venimos del botón "Anotar lectura de hoy" de Inicio, abre el día de hoy
+    
+    // Si venimos del botón "Anotar lectura de hoy" de Inicio, abre el día de hoy
 if (new URLSearchParams(location.search).has('hoy')) {
     const hoy = new Date();
     if (hoy.getMonth() + 1 === MES && hoy.getFullYear() === ANIO) {

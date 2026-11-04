@@ -9,13 +9,8 @@ $appUrl = $base . '/public';
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#8f456d">
     <meta name="description" content="Reads: organiza tus lecturas, sigue tu progreso y comparte tu afición por los libros.">
-    <link rel="manifest" href="<?= htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8') ?>/manifest.webmanifest">
-    <link rel="icon" href="<?= htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8') ?>/reads-icon.svg" type="image/svg+xml">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Reads">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+   	<?php include __DIR__ . '/pwa_head.php'; ?>
     <title>Reads · Tu espacio para leer</title>
     <style>
         :root{color-scheme:light;--ink:#392b35;--muted:#715f6b;--pink:#8f456d;--rose:#f8e9f0;--paper:#fffafc}
@@ -82,7 +77,9 @@ window.addEventListener('appinstalled', () => {
     botonInstalar.hidden = true;
 });
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    window.addEventListener('load', () => navigator.serviceWorker
+        .register('<?= htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8') ?>/sw.js', { scope: '<?= htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8') ?>/' })
+        .catch(() => {}));
 }
 </script>
 </body>

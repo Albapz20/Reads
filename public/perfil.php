@@ -89,6 +89,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_valoraciones"
         $spi  = $limitar($_POST["spicy"]      ?? 0);
         $lag  = $limitar($_POST["lagrimas"]   ?? 0);
         $plot = $limitar($_POST["plot_twist"] ?? 0);
+        $hum  = $limitar($_POST["humor"]      ?? 0);
+        $ten  = $limitar($_POST["tension"]    ?? 0);
 
         // 1) listas_lectura (amor = romance)
         try {
@@ -105,13 +107,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_valoraciones"
             $claveExistente = $stExiste->fetchColumn();
 
             if ($claveExistente !== false) {
-                $db->pdo->prepare("UPDATE puntuaciones SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?
+                $db->pdo->prepare("UPDATE puntuaciones SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?, humor = ?, tension = ?
                                    WHERE usuario_id = ? AND libro_id = ?")
-                        ->execute([$est, $rom, $spi, $lag, $plot, $usuario["id"], $claveExistente]);
+                        ->execute([$est, $rom, $spi, $lag, $plot, $hum, $ten, $usuario["id"], $claveExistente]);
             } else {
-                $db->pdo->prepare("INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?)")
-                        ->execute([$usuario["id"], $claveExterna, $est, $rom, $spi, $lag, $plot]);
+                $db->pdo->prepare("INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                        ->execute([$usuario["id"], $claveExterna, $est, $rom, $spi, $lag, $plot, $hum, $ten]);
             }
         } catch (Throwable $e) {}
     }
@@ -130,7 +132,7 @@ $abandonados = $listaService->obtenerLista($usuario["id"], "abandonado") ?? [];
 // Puntuaciones del usuario (tabla que usa libro.php), indexadas por libro_id
 $mapaPuntuaciones = [];
 try {
-    $stPunt = $db->pdo->prepare("SELECT libro_id, estrellas, romance, spicy, lagrimas, plot_twist FROM puntuaciones WHERE usuario_id = ?");
+    $stPunt = $db->pdo->prepare("SELECT libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension FROM puntuaciones WHERE usuario_id = ?");
     $stPunt->execute([$usuario["id"]]);
     foreach ($stPunt->fetchAll(PDO::FETCH_ASSOC) as $p) {
         $mapaPuntuaciones[(string)$p["libro_id"]] = $p;
@@ -147,6 +149,8 @@ function conPuntuaciones(array $lista, array $mapa): array {
         if ((float)($p["spicy"]       ?? 0) > 0) $libro["spicy"]      = $p["spicy"];
         if ((float)($p["lagrimas"]    ?? 0) > 0) $libro["lagrimas"]   = $p["lagrimas"];
         if ((float)($p["plot_twist"]  ?? 0) > 0) $libro["plot_twist"] = $p["plot_twist"];
+        if ((float)($p["humor"]       ?? 0) > 0) $libro["humor"]      = $p["humor"];
+        if ((float)($p["tension"]     ?? 0) > 0) $libro["tension"]    = $p["tension"];
     }
     unset($libro);
     return $lista;
@@ -239,6 +243,8 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
     $amorActual         = (float)($libro["amor"] ?? 0);
     $plotTwistActual    = (float)($libro["plot_twist"] ?? 0);
     $lagrimasActuales   = (float)($libro["lagrimas"] ?? 0);
+    $humorActual        = (float)($libro["humor"] ?? 0);
+    $tensionActual      = (float)($libro["tension"] ?? 0);
     $tituloEscapado     = htmlspecialchars($libro["titulo"], ENT_QUOTES);
     $autorEscapado      = htmlspecialchars($libro["autores"] ?? "", ENT_QUOTES);
     $portada            = htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg', ENT_QUOTES);
@@ -312,16 +318,16 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                 <div class="seccion-secundaria-item">
                     <p style="margin: 0 0 8px 0; font-size: 0.85rem; font-weight: 700;">🛒 Opciones para comprar o regalar:</p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <a href="<?= $urlCasaLibro ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> La Casa del Libro</a>
-                        <a href="<?= $urlAmazon ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> Amazon</a>
-                        <a href="<?= $urlFnac ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar"> Fnac</a>
+                        <a href="<?= $urlCasaLibro ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">📚 La Casa del Libro</a>
+                        <a href="<?= $urlAmazon ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">📦 Amazon</a>
+                        <a href="<?= $urlFnac ?>" target="_blank" rel="noopener noreferrer" class="btn-comprar">🛍️ Fnac</a>
                     </div>
                 </div>
             <?php else: ?>
                 <div class="seccion-secundaria-item">
                     <p style="margin: 0 0 5px 0;"><strong>Progreso:</strong> <?= $progreso ?>%</p>
 
-                    <form method="POST" action="actualizar_paginas.php" style="margin: 8px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <form method="POST" action="actualizar_paginas.php" data-todo style="margin: 8px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
                         <label style="font-size: 0.9rem;">Páginas leídas:</label>
                         <input type="number" name="paginas_leidas" min="0" <?= $paginasTotales > 0 ? 'max="'.$paginasTotales.'"' : '' ?> value="<?= $paginasLeidas ?>" class="input-number">
@@ -338,16 +344,16 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
 
             <?php if ($estado === "leyendo" || $estado === "leido"): ?>
                 <div class="seccion-secundaria-item">
-                    <form action="actualizar_fechas.php" method="POST" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                    <form action="actualizar_fechas.php" method="POST" data-todo style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
                         <input type="hidden" name="libro_id" value="<?= $libro['id'] ?>">
 
                         <label style="font-size: 0.88rem; font-weight: 600;">
-                             Inicio:
+                            📅 Inicio:
                             <input type="date" name="fecha_inicio" value="<?= htmlspecialchars($libro['fecha_inicio'] ?? '') ?>" class="input-select">
                         </label>
 
                         <label style="font-size: 0.88rem; font-weight: 600;">
-                             Fin:
+                            🏁 Fin:
                             <input type="date" name="fecha_fin" value="<?= htmlspecialchars($libro['fecha_fin'] ?? '') ?>" class="input-select">
                         </label>
 
@@ -358,7 +364,7 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
 
             <?php if ($estado === "leido" || $estado === "abandonado"): ?>
                 <div class="seccion-secundaria-item">
-                    <form method="POST" action="perfil.php" class="form-valoraciones">
+                    <form method="POST" action="perfil.php" class="form-valoraciones" data-todo>
                         <input type="hidden" name="guardar_valoraciones" value="1">
                         <input type="hidden" name="libro_id" value="<?= (int)$libro["id"] ?>">
 
@@ -367,11 +373,13 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                         <div class="fila-valoracion"><label>💖 Romance:</label><?= selectNivel('romance', '💖', $amorActual) ?></div>
                         <div class="fila-valoracion"><label>🌀 Plot Twist:</label><?= selectNivel('plot_twist', '🌀', $plotTwistActual) ?></div>
                         <div class="fila-valoracion"><label>💧 Lágrimas:</label><?= selectNivel('lagrimas', '💧', $lagrimasActuales, 'Ninguna') ?></div>
+                        <div class="fila-valoracion"><label>😂 Humor:</label><?= selectNivel('humor', '😂', $humorActual) ?></div>
+                        <div class="fila-valoracion"><label>😱 Tensión:</label><?= selectNivel('tension', '😱', $tensionActual) ?></div>
 
                         <div><button type="submit" class="btn-accion">Guardar valoraciones</button></div>
                     </form>
 
-                    <form method="POST" action="guardar_reseña.php" style="margin-bottom: 5px;">
+                    <form method="POST" action="guardar_reseña.php" data-todo style="margin-bottom: 5px;">
                         <input type="hidden" name="libro_id" value="<?= htmlspecialchars((string)(($libro["libro_id"] ?? '') !== '' ? $libro["libro_id"] : $libro["id"]), ENT_QUOTES) ?>">
                         <input type="hidden" name="volver" value="perfil">
                         <label style="font-weight: 600;">Reseña:</label><br>
@@ -380,13 +388,20 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                     </form>
 
                     <?php if ($estado === "abandonado"): ?>
-                        <form method="POST" action="actualizar_progreso.php" style="margin-top: 8px;">
+                        <form method="POST" action="actualizar_progreso.php" data-todo style="margin-top: 8px;">
                             <input type="hidden" name="libro_id" value="<?= $libro["id"] ?>">
                             <label style="font-weight: 600;">Motivo de abandono:</label><br>
                             <textarea name="motivo_abandono" rows="2" class="input-textarea"><?= htmlspecialchars($libro["motivo_abandono"] ?? "") ?></textarea>
                             <button type="submit" class="btn-accion">Guardar motivo</button>
                         </form>
                     <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (in_array($estado, ['leyendo', 'leido', 'abandonado'], true)): ?>
+                <div class="guardar-todo-wrap">
+                    <button type="button" class="btn-accion js-guardar-todo">Guardar todos los cambios</button>
+                    <span class="guardar-todo-msg" role="status"></span>
                 </div>
             <?php endif; ?>
         </template>
@@ -403,7 +418,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
             <div class="share-card-box">
                 <img src="<?= $urlQR ?>" alt="Código QR Wishlist" class="qr-img">
                 <div style="flex: 1; min-width: 200px;">
-                    <h4 style="margin: 0 0 4px 0; font-size: 1.05rem;"> Compartir mi Wishlist</h4>
+                    <h4 style="margin: 0 0 4px 0; font-size: 1.05rem;">🎁 Compartir mi Wishlist</h4>
                     <p style="margin: 0 0 10px 0; font-size: 0.85rem; opacity: 0.8;">Muestra este código QR o comparte tu enlace directo para que sepan qué libros regalarte.</p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <a href="https://api.whatsapp.com/send?text=<?= $textoWhatsApp ?>" target="_blank" rel="noopener noreferrer" class="btn-ws-icon" title="Compartir por WhatsApp">
@@ -450,6 +465,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
     <script src="/Reads/public/main.js"></script>
@@ -520,7 +536,7 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 
         <div class="tabs-listas">
             <button type="button" class="tab-btn active" data-tab="tbr">
-                 TBR <span class="tab-count"><?= count($tbr) ?></span>
+                TBR <span class="tab-count"><?= count($tbr) ?></span>
             </button>
             <button type="button" class="tab-btn" data-tab="leyendo">
                  Leyendo <span class="tab-count"><?= count($leyendo) ?></span>
@@ -605,13 +621,11 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 <div class="floating-nav-container">
     <nav class="quick-nav-floating">
         <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
-        <a href="perfil.php" class="nav-card-float active"><span class="nav-icon">👤</span><span>Mi perfil</span></a>
-        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Mi estantería</span></a>
-        <a href="estadisticas.php" class="nav-card-float"><span class="nav-icon">📊</span><span>Estadísticas</span></a>
-        <a href="calendario.php" class="nav-card-float"><span class="nav-icon">📅</span><span>Calendario</span></a>
-        <a href="buscar.php" class="nav-card-float"><span class="nav-icon">🔍</span><span>Buscar</span></a>
+        <a href="perfil.php" class="nav-card-float active"><span class="nav-icon">👤</span><span>Perfil</span></a>
+        <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Estantería</span></a>
+     
         <a href="comunidad.php" class="nav-card-float"><span class="nav-icon">👥</span><span>Comunidad</span></a>
-        <a href="ajustes.php" class="nav-card-float"><span class="nav-icon">⚙️</span><span>Ajustes</span></a>
+       
     </nav>
 </div>
 
@@ -694,10 +708,21 @@ document.querySelectorAll('.tab-content').forEach(panel => {
 const modal = document.getElementById('modalLibro');
 const modalCuerpo = document.getElementById('modalCuerpo');
 
+// "Foto" de los valores de un formulario, para saber si el usuario ha cambiado algo
+function fotoFormulario(f) {
+    return JSON.stringify(Array.from(new FormData(f).entries()).map(([k, v]) => [k, String(v)]));
+}
+
 function abrirModal(card) {
     const plantilla = card.querySelector('template.libro-detalle');
     if (!plantilla) return;
     modalCuerpo.replaceChildren(plantilla.content.cloneNode(true));
+
+    // Valores iniciales de cada formulario (para "Guardar todos los cambios")
+    modalCuerpo.querySelectorAll('form[data-todo]').forEach(f => {
+        f.dataset.inicial = fotoFormulario(f);
+    });
+
     modal.showModal();
     modal.scrollTop = 0;
     modalCuerpo.scrollTop = 0;
@@ -714,6 +739,39 @@ document.querySelectorAll('.libros-grid').forEach(grid => {
         const card = e.target.closest('.libro-card');
         if (card) { e.preventDefault(); abrirModal(card); }
     });
+});
+
+// Guardar de una vez todo lo que se haya modificado en el modal
+modalCuerpo.addEventListener('click', async e => {
+    const btn = e.target.closest('.js-guardar-todo');
+    if (!btn) return;
+
+    const msg = modalCuerpo.querySelector('.guardar-todo-msg');
+    const cambiados = Array.from(modalCuerpo.querySelectorAll('form[data-todo]'))
+        .filter(f => fotoFormulario(f) !== f.dataset.inicial);
+
+    if (cambiados.length === 0) {
+        msg.textContent = 'No hay cambios que guardar.';
+        return;
+    }
+    if (!cambiados.every(f => f.reportValidity())) return;
+
+    btn.disabled = true;
+    msg.textContent = 'Guardando…';
+    try {
+        for (const f of cambiados) {
+            const res = await fetch(f.getAttribute('action'), {
+                method: 'POST',
+                body: new FormData(f),
+                credentials: 'same-origin'
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+        }
+        location.reload();   // vuelve a la misma pestaña gracias a localStorage
+    } catch (err) {
+        btn.disabled = false;
+        msg.textContent = 'No se pudo guardar todo. Inténtalo de nuevo.';
+    }
 });
 
 document.getElementById('modalCerrar').addEventListener('click', () => modal.close());

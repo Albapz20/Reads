@@ -15,9 +15,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $spicy = $_POST["spicy"];
     $lagrimas = $_POST["lagrimas"] ?? 0;
     $plotTwist = $_POST["plot_twist"] ?? 0;
+    $humor = $_POST["humor"] ?? 0;
+    $tension = $_POST["tension"] ?? 0;
 
-    // Actualizamos la llamada para enviar las 5 métricas
-    $ratingService->guardarPuntuacion($usuario["id"], $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist);
+    // Enviamos las 7 métricas
+    $ratingService->guardarPuntuacion($usuario["id"], $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist, $humor, $tension);
 
     header("Location: libro.php?id=" . $libroId);
     exit;

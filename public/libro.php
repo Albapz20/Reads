@@ -1,4 +1,4 @@
-<?php
+ <?php
 
 require_once "../src/BookService.php";
 require_once "../src/Database.php";
@@ -610,6 +610,8 @@ $metricas = [
     'spicy'      => ['🌶️', 'Spicy',             'spicy',      '🌶️'],
     'lagrimas'   => ['💧', 'Lágrimas / Drama',  'lagrimas',   '💧'],
     'plot_twist' => ['⚡', 'Plot Twist',        'plot_twist', '⚡'],
+    'humor'      => ['😂', 'Humor',             'humor',      '😂'],
+    'tension'    => ['😱', 'Tensión',           'tension',    '😱'],
 ];
 
 // Amigos que tienen este libro
@@ -673,6 +675,7 @@ $qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <title><?= htmlspecialchars($titulo) ?></title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= @filemtime(__DIR__ . '/css/styles.css') ?>">
@@ -997,6 +1000,9 @@ $qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
                     <div class="lb-media-row"><span>🌶️ Spicy</span><strong><?= round($medias["media_spicy"] ?? 0, 1) ?> / 5</strong></div>
                     <div class="lb-media-row"><span>💧 Lágrimas</span><strong><?= round($medias["media_lagrimas"] ?? 0, 1) ?> / 5</strong></div>
                     <div class="lb-media-row"><span>⚡ Plot Twist</span><strong><?= round($medias["media_plot_twist"] ?? 0, 1) ?> / 5</strong></div>
+                 <div class="lb-media-row"><span>😂 Humor</span><strong><?= round($medias["media_humor"] ?? 0, 1) ?> / 5</strong></div>
+                 <div class="lb-media-row"><span>😱 Tensión</span><strong><?= round($medias["media_tension"] ?? 0, 1) ?> / 5</strong></div>
+                
                 <?php else: ?>
                     <p class="lb-empty">Aún no hay puntuaciones.</p>
                 <?php endif; ?>
@@ -1045,27 +1051,12 @@ $qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
 
         <a href="perfil.php" class="nav-card-float">
             <span class="nav-icon">👤</span>
-            <span>Mi perfil</span>
+            <span>Perfil</span>
         </a>
 
         <a href="biblioteca.php" class="nav-card-float">
             <span class="nav-icon">📚</span>
-            <span>Mi estantería</span>
-        </a>
-
-        <a href="estadisticas.php" class="nav-card-float">
-            <span class="nav-icon">📊</span>
-            <span>Estadísticas</span>
-        </a>
-
-        <a href="calendario.php" class="nav-card-float">
-            <span class="nav-icon">📅</span>
-            <span>Calendario</span>
-        </a>
-
-        <a href="buscar.php" class="nav-card-float">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
+            <span>Estantería</span>
         </a>
 
         <a href="comunidad.php" class="nav-card-float">
@@ -1073,10 +1064,6 @@ $qFanart = urlencode(trim($tituloBusqueda . ' ' . $autorBusqueda . ' fanart'));
             <span>Comunidad</span>
         </a>
 
-        <a href="ajustes.php" class="nav-card-float">
-            <span class="nav-icon">⚙️</span>
-            <span>Ajustes</span>
-        </a>
     </nav>
 </div>
 

@@ -1,5 +1,4 @@
 <?php
-
 class RecomendacionesService
 {
     const NUM_BASE       = 2;   // últimos libros leídos del año usados como base
@@ -8,8 +7,12 @@ class RecomendacionesService
     const TOTAL_MIN      = 6;
     const TOTAL_MAX      = 12;
     const MAX_INTENTOS   = 2;   // reintentos ante fallos temporales de una fuente
+    const PRESUPUESTO_S  = 25;  // segundos máximos para fuentes externas
+    const TIMEOUT_S      = 8;   // timeout por petición
     const ORDEN_FUENTES  = ['google', 'openlibrary', 'local'];
-    const USER_AGENT = 'ReadsApp/1.0 (albaperezcc64.com)';
+    const USER_AGENT     = 'ReadsApp/1.0 (albaperezcc64.com)';
+    // false = solo recomendaciones relacionadas con tus libros (autor/género). true = rellena con genéricos iguales para todos
+    const RELLENO_GENERICO = false;
 
     // código de 3 letras de Ajustes => [Google Books, Open Library]
     private const MAPA_IDIOMA = [
@@ -18,34 +21,37 @@ class RecomendacionesService
         'deu' => ['de', 'ger'],
     ];
 
-    private PDO $pdo;
-    private string $apiKey;
-    private int $usuarioId = 0;
-    private string $langGb = '';     
-    private string $langOl = '';
-    private array $vistos = [];
-    private array $autoresGlobal = [];
-    private array $yaTiene = ['ids' => [], 'bases' => []];
-    private array $caida = [];       
-    private array $fuentes = [];
-    public array $log = [];
+    private $pdo;
+    private $apiKey;
+    private $usuarioId = 0;
+    private $langGb = '';
+    private $langOl = '';
+    private $vistos = [];
+    private $autoresGlobal = [];
+    private $yaTiene = ['ids' => [], 'bases' => []];
+    private $caida = [];
+    private $fuentes = [];
+    private $inicio = 0.0;
+    public $log = [];
 
-    public function __construct(PDO $pdo, string $apiKey = '')
+    public function __construct(PDO $pdo, $apiKey = '')
     {
         $this->pdo    = $pdo;
-        $this->apiKey = $apiKey;
+        $this->apiKey = (string)$apiKey;
     }
 
     /*  API pública  */
     public function recomendar(int $usuarioId, int $year): array
     {
+        $this->inicio = microtime(true);
+
         $base = $this->getLibrosBase($usuarioId, $year);
         if (empty($base)) {
             return ['basadoEn' => [], 'libros' => []];
         }
 
         $this->usuarioId = $usuarioId;
-        [$this->langGb, $this->langOl] = $this->getIdioma($usuarioId);
+        list($this->langGb, $this->langOl) = $this->getIdioma($usuarioId);
         $this->cargarYaTiene($usuarioId);
 
         $autores   = [];
@@ -55,20 +61,35 @@ class RecomendacionesService
             $generosDB[$i] = $this->generosDe([(string)($libro['categorias'] ?? '')], 3);
         }
 
-        //  Recorrer las fuentes hasta tener suficientes libros 
+        // Recorrer las fuentes hasta tener suficientes libros
         $porLibro     = array_fill_keys(array_keys($base), []);
         $relleno      = [];
         $rellenoOtros = [];
 
         foreach (self::ORDEN_FUENTES as $fuente) {
             if ($this->total($porLibro) >= self::TOTAL_MIN) break;
+
+            // Las fuentes externas se omiten si ya se gastó el tiempo
+            if ($fuente !== 'local' && (microtime(true) - $this->inicio) > self::PRESUPUESTO_S) {
+                $this->fuentes[] = $fuente . ' (omitida por tiempo)';
+                continue;
+            }
+
             $antes = $this->total($porLibro);
 
-            $cand = match ($fuente) {
-                'google'      => $this->candidatosGoogle($base, $autores, $generosDB),
-                'openlibrary' => $this->candidatosOpenLibrary($base, $autores, $generosDB),
-                default       => $this->candidatosLocal($base, $autores, $generosDB),
-            };
+            try {
+                if ($fuente === 'google') {
+                    $cand = $this->candidatosGoogle($base, $autores, $generosDB);
+                } elseif ($fuente === 'openlibrary') {
+                    $cand = $this->candidatosOpenLibrary($base, $autores, $generosDB);
+                } else {
+                    $cand = $this->candidatosLocal($base, $autores, $generosDB);
+                }
+            } catch (\Throwable $e) {
+                $this->log["_error_$fuente"] = $e->getMessage();
+                $this->fuentes[] = $fuente . ' (error)';
+                continue;
+            }
 
             $this->seleccionar($base, $autores, $cand, $porLibro);
             $relleno      = array_merge($relleno, $cand['relleno']);
@@ -76,7 +97,7 @@ class RecomendacionesService
             $this->fuentes[] = $fuente . ' (+' . ($this->total($porLibro) - $antes) . ')';
         }
 
-        //  Mezclar alternando entre los libros base 
+        // Mezclar alternando entre los libros base
         $resultado = [];
         $max = empty($porLibro) ? 0 : max(array_map('count', $porLibro));
         for ($k = 0; $k < $max; $k++) {
@@ -85,14 +106,14 @@ class RecomendacionesService
             }
         }
 
-        //  Rellenos si quedó corto 
+        // Rellenos si quedó corto
         if (count($resultado) < self::TOTAL_MIN) {
             foreach ($relleno as $l) {
                 $this->aceptar($resultado, $l);
                 if (count($resultado) >= self::TOTAL_MAX) break;
             }
         }
-        if (count($resultado) < 4) {
+        if (self::RELLENO_GENERICO && count($resultado) < 4) {
             foreach ($rellenoOtros as $l) {
                 $this->aceptar($resultado, $l, null, false);
                 if (count($resultado) >= self::TOTAL_MIN) break;
@@ -100,10 +121,22 @@ class RecomendacionesService
         }
 
         $this->log['_fuentes'] = implode(' → ', $this->fuentes);
+        $this->log['_segundos'] = round(microtime(true) - $this->inicio, 2);
+
+        $titulos = [];
+        $baseInfo = [];
+        foreach ($base as $i => $u) {
+            $t = $this->sinParentesis((string)$u['titulo']);
+            $titulos[] = $t;
+            $baseInfo[] = ['titulo' => $t, 'autor' => $autores[$i], 'generos' => $generosDB[$i]];
+        }
 
         return [
-            'basadoEn' => array_map(fn($u) => $this->sinParentesis($u['titulo']), $base),
+            'basadoEn' => $titulos,
             'libros'   => array_slice($resultado, 0, self::TOTAL_MAX),
+            // Datos para que el navegador pueda buscar por su cuenta si el servidor no encontró nada
+            'baseInfo' => $baseInfo,
+            'idiomaOl' => $this->langOl,
         ];
     }
 
@@ -121,7 +154,7 @@ class RecomendacionesService
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** @return array{0:string,1:string} [código Google, código Open Library] */
+    /** @return array [código Google, código Open Library] */
     private function getIdioma(int $usuarioId): array
     {
         $pref = 'spa';
@@ -130,7 +163,7 @@ class RecomendacionesService
             $stmt->execute([$usuarioId]);
             $v = $stmt->fetchColumn();
             if ($v !== false && $v !== null) $pref = (string)$v;   // '' = cualquier idioma
-        } catch (Exception $e) {}
+        } catch (\Exception $e) {}
         return self::MAPA_IDIOMA[$pref] ?? ['', ''];
     }
 
@@ -147,7 +180,6 @@ class RecomendacionesService
     }
 
     /*  Selección común a todas las fuentes  */
-
     private function total(array $porLibro): int
     {
         return array_sum(array_map('count', $porLibro));
@@ -182,7 +214,11 @@ class RecomendacionesService
         if ($l['id'] === '' || $l['titulo'] === '' || $l['portada'] === '' || !$l['conDesc']) return false;
         if ($l['paginas'] > 0 && $l['paginas'] < 60) return false;
         if ($filtrarIdioma && $this->langGb !== '' && $l['idioma'] !== '' && $l['idioma'] !== $this->langGb) return false;
-        if ($exigirAutor !== null && !in_array($exigirAutor, array_map([$this, 'claveAutor'], $l['autores']), true)) return false;
+        if ($exigirAutor !== null) {
+            $claves = [];
+            foreach ($l['autores'] as $a) $claves[] = $this->claveAutor((string)$a);
+            if (!in_array($exigirAutor, $claves, true)) return false;
+        }
 
         $base = $this->tituloBase($l['titulo']);
         if ($base === '' || isset($this->vistos[$base]) || isset($this->yaTiene['bases'][$base])) return false;
@@ -198,7 +234,7 @@ class RecomendacionesService
             'titulo'  => $l['titulo'],
             'autor'   => $l['autor'],
             'portada' => $l['portada'],
-            'url'     => $l['url'] ?? null,     
+            'url'     => $l['url'] ?? null,
             'fuente'  => $l['fuente'],
         ];
         return true;
@@ -219,6 +255,14 @@ class RecomendacionesService
         return array_slice(array_keys($conteo), 0, $max);
     }
 
+    /** Junta todas las listas de porGenero y añade una extra  */
+    private function juntarRelleno(array $porGenero, array $extra): array
+    {
+        $r = [];
+        foreach ($porGenero as $lista) $r = array_merge($r, $lista);
+        return array_merge($r, $extra);
+    }
+
     private function qSubject(string $g): string
     {
         return 'subject:' . (preg_match('/\s/', $g) ? '"' . $g . '"' : $g);
@@ -234,7 +278,7 @@ class RecomendacionesService
                 $ronda1["a$i"] = ['url' => $this->urlGoogle('inauthor:"' . $autores[$i] . '"', true, 40)];
             }
             $ronda1["t$i"] = ['url' => $this->urlGoogle(
-                'intitle:"' . $this->sinParentesis($libro['titulo']) . '"'
+                'intitle:"' . $this->sinParentesis((string)$libro['titulo']) . '"'
                 . ($autores[$i] !== '' ? ' inauthor:"' . $autores[$i] . '"' : ''),
                 false, 5
             )];
@@ -257,38 +301,45 @@ class RecomendacionesService
         foreach ($generos as $g) {
             $ronda2["g:$g"] = ['url' => $this->urlGoogle($this->qSubject($g), true, 40), 'reintentarVacio' => true];
         }
-        $ronda2['ficcion']       = ['url' => $this->urlGoogle('subject:fiction', true, 40),  'reintentarVacio' => true];
-        $ronda2['ficcion_otros'] = ['url' => $this->urlGoogle('subject:fiction', false, 40), 'reintentarVacio' => true];
-        $res2 = $this->pedir('google', $ronda2, 'items');
+        if (self::RELLENO_GENERICO) {
+            $ronda2['ficcion']       = ['url' => $this->urlGoogle('subject:fiction', true, 40),  'reintentarVacio' => true];
+            $ronda2['ficcion_otros'] = ['url' => $this->urlGoogle('subject:fiction', false, 40), 'reintentarVacio' => true];
+        }
+        $res2 = empty($ronda2) ? [] : $this->pedir('google', $ronda2, 'items');
 
         foreach ($generos as $g) {
             $cand['porGenero'][$g] = $this->normGoogle($res2["g:$g"] ?? []);
         }
-        $cand['relleno']      = array_merge(...array_values($cand['porGenero']), ...[$this->normGoogle($res2['ficcion'] ?? [])]);
+        $cand['relleno']      = $this->juntarRelleno($cand['porGenero'], $this->normGoogle($res2['ficcion'] ?? []));
         $cand['rellenoOtros'] = $this->normGoogle($res2['ficcion_otros'] ?? []);
         return $cand;
     }
 
     private function urlGoogle(string $q, bool $restringirIdioma, int $max): string
     {
-        return 'https://www.googleapis.com/books/v1/volumes?' . http_build_query(array_filter([
-            'q'            => $q,
-            'printType'    => 'books',
-            'maxResults'   => $max,
-            'langRestrict' => ($restringirIdioma && $this->langGb !== '') ? $this->langGb : null,
-            'key'          => $this->apiKey !== '' ? $this->apiKey : null,
-        ], fn($v) => $v !== null));
+        $params = [
+            'q'          => $q,
+            'printType'  => 'books',
+            'maxResults' => $max,
+        ];
+        if ($restringirIdioma && $this->langGb !== '') $params['langRestrict'] = $this->langGb;
+        if ($this->apiKey !== '') $params['key'] = $this->apiKey;
+        return 'https://www.googleapis.com/books/v1/volumes?' . http_build_query($params);
     }
 
     private function normGoogle(array $items): array
     {
-        return array_values(array_map(fn($it) => $this->normalizarGoogle($it), $items));
+        $out = [];
+        foreach ($items as $it) {
+            if (is_array($it)) $out[] = $this->normalizarGoogle($it);
+        }
+        return $out;
     }
 
     private function normalizarGoogle(array $item): array
     {
         $vi  = $item['volumeInfo'] ?? [];
-        $img = $vi['imageLinks']['thumbnail'] ?? $vi['imageLinks']['smallThumbnail'] ?? '';
+        $img = $vi['imageLinks']['thumbnail'] ?? ($vi['imageLinks']['smallThumbnail'] ?? '');
         if ($img !== '') $img = str_replace(['http://', '&edge=curl'], ['https://', ''], $img);
 
         return [
@@ -317,7 +368,7 @@ class RecomendacionesService
             // Solo hace falta consultar el libro si no conocemos su género
             if (empty($generosDB[$i])) {
                 $ronda1["t$i"] = ['url' => $this->urlOL(
-                    'title:"' . $this->sinParentesis($libro['titulo']) . '"'
+                    'title:"' . $this->sinParentesis((string)$libro['titulo']) . '"'
                     . ($autores[$i] !== '' ? ' author:"' . $autores[$i] . '"' : ''),
                     3, false
                 )];
@@ -344,14 +395,16 @@ class RecomendacionesService
         foreach ($generos as $g) {
             $ronda2["g:$g"] = ['url' => $this->urlOL($this->qSubject($g), 40, true, 'rating')];
         }
-        $ronda2['ficcion']       = ['url' => $this->urlOL('subject:fiction', 40, true,  'rating')];
-        $ronda2['ficcion_otros'] = ['url' => $this->urlOL('subject:fiction', 40, false, 'rating')];
-        $res2 = $this->pedir('openlibrary', $ronda2, 'docs');
+        if (self::RELLENO_GENERICO) {
+            $ronda2['ficcion']       = ['url' => $this->urlOL('subject:fiction', 40, true,  'rating')];
+            $ronda2['ficcion_otros'] = ['url' => $this->urlOL('subject:fiction', 40, false, 'rating')];
+        }
+        $res2 = empty($ronda2) ? [] : $this->pedir('openlibrary', $ronda2, 'docs');
 
         foreach ($generos as $g) {
             $cand['porGenero'][$g] = $this->normOL($res2["g:$g"] ?? []);
         }
-        $cand['relleno']      = array_merge(...array_values($cand['porGenero']), ...[$this->normOL($res2['ficcion'] ?? [])]);
+        $cand['relleno']      = $this->juntarRelleno($cand['porGenero'], $this->normOL($res2['ficcion'] ?? []));
         $cand['rellenoOtros'] = $this->normOL($res2['ficcion_otros'] ?? []);
         return $cand;
     }
@@ -359,18 +412,23 @@ class RecomendacionesService
     private function urlOL(string $q, int $limit = 40, bool $idioma = true, ?string $sort = null): string
     {
         if ($idioma && $this->langOl !== '') $q .= ' language:' . $this->langOl;
-        return 'https://openlibrary.org/search.json?' . http_build_query(array_filter([
+        $params = [
             'q'      => $q,
             'limit'  => $limit,
             'fields' => 'key,title,author_name,cover_i,subject,number_of_pages_median,editions,editions.title,editions.cover_i',
-            'lang'   => $idioma && $this->langGb !== '' ? $this->langGb : null,   
-            'sort'   => $sort,
-        ], fn($v) => $v !== null));
+        ];
+        if ($idioma && $this->langGb !== '') $params['lang'] = $this->langGb;
+        if ($sort !== null) $params['sort'] = $sort;
+        return 'https://openlibrary.org/search.json?' . http_build_query($params);
     }
 
     private function normOL(array $docs): array
     {
-        return array_values(array_map(fn($d) => $this->normalizarOL($d), $docs));
+        $out = [];
+        foreach ($docs as $d) {
+            if (is_array($d)) $out[] = $this->normalizarOL($d);
+        }
+        return $out;
     }
 
     private function normalizarOL(array $d): array
@@ -390,14 +448,14 @@ class RecomendacionesService
         }
 
         return [
-            'id'      => basename((string)($d['key'] ?? '')),   
+            'id'      => basename((string)($d['key'] ?? '')),
             'titulo'  => $titulo,
             'autor'   => $autor,
             'autores' => $autores,
             'portada' => !empty($coverId) ? 'https://covers.openlibrary.org/b/id/' . (int)$coverId . '-M.jpg' : '',
             'paginas' => (int)($d['number_of_pages_median'] ?? 0),
-            'idioma'  => '',        
-            'conDesc' => true,      
+            'idioma'  => '',
+            'conDesc' => true,
             'url'     => 'buscar.php?q=' . urlencode(trim($titulo . ' ' . $autor)),
             'fuente'  => 'openlibrary',
         ];
@@ -414,7 +472,7 @@ class RecomendacionesService
             $l = mb_strtolower($s);
             if ($s === '' || mb_strlen($s) > 30) continue;
             foreach ($ruido as $r) {
-                if (str_contains($l, $r)) continue 2;
+                if (strpos($l, $r) !== false) continue 2;
             }
             $cuenta[$s] = ($cuenta[$s] ?? 0) + 1;
         }
@@ -437,13 +495,18 @@ class RecomendacionesService
             }
         }
         // Los más populares entre los usuarios de la app
-        $cand['relleno'] = $this->localBuscar(null, '');
-        $this->log['local'] = 'candidatos de otros usuarios: ' . count($cand['relleno']) . ' (populares)';
+        if (self::RELLENO_GENERICO) {
+            $cand['relleno'] = $this->localBuscar(null, '');
+        }
+        $this->log['local'] = 'relleno genérico: ' . (self::RELLENO_GENERICO ? 'sí' : 'no');
         return $cand;
     }
 
     private function localBuscar(?string $columna, string $valor, int $limite = 30): array
     {
+        // Lista blanca de columnas (evita inyección SQL por el nombre de columna)
+        if ($columna !== null && !in_array($columna, ['autores', 'categorias'], true)) return [];
+
         try {
             $sql = "SELECT libro_id, MAX(titulo) AS titulo, MAX(autores) AS autores,
                            MAX(portada) AS portada, COUNT(*) AS veces
@@ -478,20 +541,18 @@ class RecomendacionesService
                 ];
             }
             return $salida;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return [];
         }
     }
 
     /*  Peticiones HTTP con reintentos  */
     /**
-     * Lanza peticiones en paralelo a una fuente y reintenta las que fallen
-     * por causas temporales. Si todas fallan con error, marca la fuente como
-     * caída y las siguientes llamadas se omiten (así no se pierde tiempo).
+     * Lanza peticiones en paralelo y reintenta las que fallen por causas
+     * temporales. Si todas fallan, marca la fuente como caída.
      *
-     * @param array  $reqs         [clave => ['url' => ..., 'reintentarVacio' => bool]]
-     * @param string $claveItems   'items' (Google) o 'docs' (Open Library)
-     * @return array               [clave => lista de resultados]
+     * @param array  $reqs       [clave => ['url' => ..., 'reintentarVacio' => bool]]
+     * @param string $claveItems 'items' (Google) o 'docs' (Open Library)
      */
     private function pedir(string $fuente, array $reqs, string $claveItems): array
     {
@@ -508,21 +569,26 @@ class RecomendacionesService
         $conError   = [];
 
         for ($intento = 1; $intento <= self::MAX_INTENTOS && !empty($pendientes); $intento++) {
-            if ($intento > 1) usleep(700000);   // pausa antes de reintentar
+            if ($intento > 1) {
+                if ((microtime(true) - $this->inicio) > self::PRESUPUESTO_S) break;
+                usleep(700000);
+            }
             $fallidas = [];
 
             foreach ($this->lote($pendientes) as $k => $r) {
                 $items = $r['json'][$claveItems] ?? [];
                 if (!is_array($items)) $items = [];
 
-                $codigo   = $r['code'];
-                $error    = $codigo >= 400 || $r['errno'] !== 0 || $codigo === 0;
-                $reintent = $codigo >= 500 || $codigo === 429 || $r['errno'] !== 0 || $codigo === 0
+                $codigo = $r['code'];
+                $noJson = !$r['valido'];
+                $error  = $codigo >= 400 || $r['errno'] !== 0 || $codigo === 0 || $noJson;
+                $reintent = $error
                          || (empty($items) && !empty($reqs[$k]['reintentarVacio']));
 
                 $conError[$k] = $error;
                 $salida[$k]   = $items;
                 $this->log["$fuente:$k"] = "intento $intento · HTTP $codigo · " . count($items) . ' resultados'
+                    . ($noJson ? ' · respuesta no JSON' : '')
                     . (isset($r['json']['error']['message']) ? ' · ' . $r['json']['error']['message'] : '')
                     . ($r['err'] !== '' ? ' · curl: ' . $r['err'] : '');
 
@@ -540,19 +606,30 @@ class RecomendacionesService
     /** Una tanda de peticiones en paralelo, sin reintentos */
     private function lote(array $reqs): array
     {
+        if (!function_exists('curl_init')) {
+            $salida = [];
+            foreach ($reqs as $k => $_) {
+                $salida[$k] = ['code' => 0, 'json' => [], 'valido' => false, 'errno' => 1, 'err' => 'cURL no disponible'];
+            }
+            return $salida;
+        }
+
+        if (!function_exists('curl_multi_init')) {
+            $salida = [];
+            foreach ($reqs as $k => $r) {
+                $ch = $this->nuevoCurl($r['url']);
+                $cuerpo = curl_exec($ch);
+                $salida[$k] = $this->leerRespuesta($ch, is_string($cuerpo) ? $cuerpo : '');
+                curl_close($ch);
+            }
+            return $salida;
+        }
+
         $mh = curl_multi_init();
         $handles = [];
 
         foreach ($reqs as $k => $r) {
-            $ch = curl_init($r['url']);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_CONNECTTIMEOUT => 4,
-                CURLOPT_TIMEOUT        => 12,
-                CURLOPT_SSL_VERIFYPEER => false,  
-                CURLOPT_USERAGENT      => self::USER_AGENT,
-            ]);
+            $ch = $this->nuevoCurl($r['url']);
             curl_multi_add_handle($mh, $ch);
             $handles[$k] = $ch;
         }
@@ -564,18 +641,42 @@ class RecomendacionesService
 
         $salida = [];
         foreach ($handles as $k => $ch) {
-            $json = json_decode((string)curl_multi_getcontent($ch), true);
-            $salida[$k] = [
-                'code'  => (int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
-                'json'  => is_array($json) ? $json : [],
-                'errno' => curl_errno($ch),
-                'err'   => curl_error($ch),
-            ];
+            $salida[$k] = $this->leerRespuesta($ch, (string)curl_multi_getcontent($ch));
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
         }
         curl_multi_close($mh);
         return $salida;
+    }
+
+    private function nuevoCurl(string $url)
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => self::TIMEOUT_S,
+            CURLOPT_SSL_VERIFYPEER => false,   
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_ENCODING       => '',
+            CURLOPT_USERAGENT      => self::USER_AGENT,
+            CURLOPT_HTTPHEADER     => ['Accept: application/json'],
+        ]);
+        return $ch;
+    }
+
+    private function leerRespuesta($ch, string $cuerpo): array
+    {
+        $json = json_decode($cuerpo, true);
+        return [
+            'code'   => (int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
+            'json'   => is_array($json) ? $json : [],
+            'valido' => is_array($json),
+            'errno'  => curl_errno($ch),
+            'err'    => curl_error($ch),
+        ];
     }
 
     /*  Helpers de texto  */
@@ -596,12 +697,15 @@ class RecomendacionesService
     private function tituloBase(string $t): string
     {
         $t = $this->sinParentesis($t);
-        return $this->limpiarTexto(preg_split('/\s*[:\x{2013}\x{2014}]\s*|\s+-\s+/u', $t)[0] ?? $t);
+        $partes = preg_split('/\s*[:\x{2013}\x{2014}]\s*|\s+-\s+/u', $t);
+        return $this->limpiarTexto($partes[0] ?? $t);
     }
 
     private function claveAutor(string $n): string
     {
-        $t = array_values(array_filter(explode(' ', $this->limpiarTexto($n)), fn($w) => strlen($w) > 1));
+        $t = array_values(array_filter(explode(' ', $this->limpiarTexto($n)), function ($w) {
+            return strlen($w) > 1;
+        }));
         return count($t) >= 2 ? $t[0] . ' ' . end($t) : implode(' ', $t);
     }
 
@@ -617,8 +721,10 @@ class RecomendacionesService
         }
         arsort($cuenta);
         $genericos = ['fiction', 'juvenile fiction', 'literary collections', 'young adult fiction'];
-        $buenos = array_filter(array_keys($cuenta), fn($g) => !in_array(mb_strtolower($g), $genericos, true));
-        $lista  = array_values($buenos) ?: array_keys($cuenta);
+        $buenos = array_filter(array_keys($cuenta), function ($g) use ($genericos) {
+            return !in_array(mb_strtolower($g), $genericos, true);
+        });
+        $lista = array_values($buenos) ?: array_keys($cuenta);
         return array_slice($lista, 0, $max);
     }
 }
