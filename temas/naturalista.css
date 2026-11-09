@@ -34,3 +34,40 @@
     --selector-bg: #273832;
     --selector-borde: #3d544b;
 }
+
+/* Pestañas de la estantería en modo "bosque nocturno" */
+body.page-biblioteca .pestana {
+    background: var(--selector-bg);          /* #273832, el mismo que los selectores */
+    color: var(--texto-biblioteca);
+    border: 1px solid var(--selector-borde);
+}
+
+
+
+body.page-biblioteca .pestana:hover {
+    background: #2f453d;
+    border-color: var(--borde-estanteria);
+}
+
+body.page-biblioteca .pestana.activa {
+    background: var(--primary-color);        /* verde #4d7c4d */
+    color: var(--primary-contrast);
+    border-color: var(--primary-color);
+}
+
+body.page-biblioteca .pestana .n {
+    background: rgba(255, 255, 255, .10);
+    color: var(--texto-biblioteca);
+    border: none;
+    box-shadow: none;
+    border-radius: 999px;
+    padding: 1px 7px;
+    min-width: 0;
+    line-height: 1.4;
+    font-size: .8em;
+}
+
+body.page-biblioteca .pestana.activa .n {
+    background: rgba(0, 0, 0, .22);
+    color: var(--primary-contrast);
+}

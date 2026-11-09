@@ -17,9 +17,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $plotTwist = $_POST["plot_twist"] ?? 0;
     $humor = $_POST["humor"] ?? 0;
     $tension = $_POST["tension"] ?? 0;
+        $originalidad = $_POST["originalidad"] ?? 0;
 
-    // Enviamos las 7 métricas
-    $ratingService->guardarPuntuacion($usuario["id"], $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist, $humor, $tension);
+
+            $limitar = fn($v) => max(0, min(5, round((float)$v * 2) / 2));
+    $estrellas = $limitar($estrellas); $romance = $limitar($romance); $spicy = $limitar($spicy);
+    $lagrimas = $limitar($lagrimas); $plotTwist = $limitar($plotTwist); $humor = $limitar($humor);
+    $tension = $limitar($tension); $originalidad = $limitar($originalidad);
+
+    
+    // Enviamos las 8 métricas
+       $ratingService->guardarPuntuacion($usuario["id"], $libroId, $estrellas, $romance, $spicy, $lagrimas, $plotTwist, $humor, $tension, $originalidad);
 
     header("Location: libro.php?id=" . $libroId);
     exit;

@@ -67,7 +67,9 @@ class UserService {
     /* Generar un token nuevo para reenviar el email de confirmación */
     public function regenerarToken($email) {
 
-        $sql = "SELECT id, nombre FROM usuarios WHERE email = ? AND verificado = 0";
+        $sql = "SELECT id, nombre FROM usuarios
+         WHERE email = ? AND verificado = 0
+           AND (token_expira IS NULL OR token_expira < DATE_ADD(NOW(), INTERVAL 1435 MINUTE))";
         $stmt = $this->db->pdo->prepare($sql);
         $stmt->execute([$email]);
         $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -131,20 +133,26 @@ class UserService {
         $stmt = $this->db->pdo->prepare($sql);
         return $stmt->execute([$nombre, $email, $privacidad, $tema_visual, $id]);
     }
+ /* Obtener usuario por email */
+public function obtenerUsuarioPorEmail($email) {
 
-    /* Cambiar contraseña */
-    public function cambiarContraseña($id, $nuevaContraseña) {
+    $sql = "SELECT * FROM usuarios WHERE email = ?";
+    $stmt = $this->db->pdo->prepare($sql);
+    $stmt->execute([$email]);
 
-        $passwordHash = password_hash($nuevaContraseña, PASSWORD_DEFAULT);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
 
-        $sql = "UPDATE usuarios
-                SET password = ?
-                WHERE id = ?";
+/* Cambiar contraseña */
+public function cambiarPassword($id, $nuevaPassword) {
 
-        $stmt = $this->db->pdo->prepare($sql);
-        return $stmt->execute([$passwordHash, $id]);
-    }
+    $passwordHash = password_hash($nuevaPassword, PASSWORD_DEFAULT);
 
+    $sql = "UPDATE usuarios SET password = ? WHERE id = ?";
+    $stmt = $this->db->pdo->prepare($sql);
+    return $stmt->execute([$passwordHash, $id]);
+}
+   
     public function generarLomoDesdePortada($rutaPortada, $titulo, $idLibro) {
 
         // Si no existe la portada, no hacemos nada

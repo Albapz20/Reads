@@ -33,6 +33,9 @@ if (!$p) http_response_code(404);
 
 $nombre = $p['usuario']['nombre'] ?? '';
 
+// Wishlist del otro usuario (enlace público que ya usas en perfil.php)
+$urlWishlist = "lista_deseos.php?usuario_id=" . $id;
+
 $mesesInicial = ['E', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 $mesesNombre  = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -99,9 +102,19 @@ function pfEstanteria(array $libros): string
                 </div>
             </div>
 
-            <?php if (!$p['privado'] || $p['sigo']): ?>
-                <div class="pf-accion"><?= cmBotonSeguir($id, $p['sigo'], $csrf) ?></div>
-            <?php endif; ?>
+ <?php if (!$p['privado'] || $p['sigo']): ?>
+    <div class="pf-accion">
+        <?= cmBotonSeguir($id, $p['sigo'], $csrf) ?>
+        <?php if (!$p['privado']): ?>
+            <a href="<?= cmH($urlWishlist) ?>" class="cm-btn"
+               style="background: <?= cmH(cmGradienteTema($p['tema'])) ?>; color:#fff; text-decoration:none;">
+                🎁 Wishlist
+            </a>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
+
         </div>
     </section>
 
@@ -136,7 +149,7 @@ function pfEstanteria(array $libros): string
                         <?= cmAnillo((int)$af['indice'], $af['indice'] . '%', 'afinidad') ?>
                         <div class="texto">
                             <p> <strong><?= (int)$af['libros'] ?></strong> <?= $af['libros'] === 1 ? 'libro' : 'libros' ?> en común</p>
-                            <p>✍ <strong><?= (int)$af['autores'] ?></strong> <?= $af['autores'] === 1 ? 'autor' : 'autores' ?> en común</p>
+                            <p> <strong><?= (int)$af['autores'] ?></strong> <?= $af['autores'] === 1 ? 'autor' : 'autores' ?> en común</p>
                             <small style="opacity:.65;">
                                 <?php
                                     echo $af['indice'] >= 60 ? 'Casi gemelos lectores ✨'

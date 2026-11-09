@@ -25,7 +25,7 @@ $temasDisponibles = [
     'azul'        => ['nombre' => 'Azul',        'icono' => '💙', 'bg' => '#edf5fc', 'border' => '#c9ddf1', 'text' => '#1f3a5c'],
     'sunset'      => ['nombre' => 'Sunset',      'icono' => '🌅', 'bg' => '#fff5ec', 'border' => '#fbd0a8', 'text' => '#4a1d0e'],
     'coffee'      => ['nombre' => 'Café',        'icono' => '☕', 'bg' => '#231a16', 'border' => '#5a443a', 'text' => '#f4e9d8'],
-    'dracula'     => ['nombre' => 'Dracula',     'icono' => '🐉', 'bg' => '#1e1f2e', 'border' => '#44476a', 'text' => '#f8f8f2'],
+   'dracula'     => ['nombre' => 'Dracula',     'icono' => '🧛', 'bg' => '#0d0d0f', 'border' => '#7a1420', 'text' => '#ff4d5e'],
     'lavanda'     => ['nombre' => 'Lavanda',     'icono' => '🪻', 'bg' => '#f5f0ff', 'border' => '#d8c8f0', 'text' => '#4b3f72'],
 ];
 
@@ -35,10 +35,10 @@ $datos = $userService->obtenerUsuarioPorId($usuario["id"]);
 $emailActual = strtolower(trim($datos['email'] ?? $usuario['email'] ?? ''));
 $esAdmin     = ($emailActual === 'admin@admin.com');
 $tema = strtolower(trim($datos["tema_visual"] ?? "pastel"));
-if (!isset($temasDisponibles[$tema])) $tema = 'pastel';   
+if (!isset($temasDisponibles[$tema])) $tema = 'pastel';
 
 $mensaje = "";
-$iniciarCola = false;   
+$iniciarCola = false;
 
 // Si el archivo supera el límite de PHP, el servidor descarta todo el formulario y no llega ni $_POST ni $_FILES:
 // sin esto no se mostraría ningún mensaje.
@@ -65,6 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_tema"])) {
 
     $mensaje = "Tema visual actualizado a " . $temasDisponibles[$tema]['nombre'] . ".";
 }
+
 /* Eliminar cuenta */
 if (session_status() === PHP_SESSION_NONE) session_start();
 if (empty($_SESSION['csrf_eliminar'])) {
@@ -110,7 +111,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["eliminar_cuenta"])) {
             $db->pdo->commit();
             $db->pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
 
-            // Foto de perfil subida 
+            // Foto de perfil subida
             $av = (string)($filaUsuario['avatar'] ?? '');
             if (strpos($av, 'img:') === 0) {
                 $archivo = __DIR__ . '/../img/avatares/' . basename(substr($av, 4));
@@ -131,6 +132,53 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["eliminar_cuenta"])) {
             if ($db->pdo->inTransaction()) $db->pdo->rollBack();
             try { $db->pdo->exec("SET FOREIGN_KEY_CHECKS = 1"); } catch (Throwable $e2) {}
             $mensaje = "No se pudo eliminar la cuenta. Inténtalo más tarde.";
+        }
+    }
+}
+
+/* Cambiar contraseña */
+if (empty($_SESSION['csrf_password'])) {
+    $_SESSION['csrf_password'] = bin2hex(random_bytes(16));
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["cambiar_password"])) {
+    $tokenOk   = hash_equals($_SESSION['csrf_password'], (string)($_POST['csrf'] ?? ''));
+    $actualPw  = (string)($_POST['password_actual'] ?? '');
+    $nuevaPw   = (string)($_POST['password_nueva'] ?? '');
+    $repetirPw = (string)($_POST['password_repetir'] ?? '');
+
+    $stmtPw = $db->pdo->prepare("SELECT password FROM usuarios WHERE id = ? LIMIT 1");
+    $stmtPw->execute([$usuario["id"]]);
+    $hashActual = (string)$stmtPw->fetchColumn();
+
+    if (!$tokenOk) {
+        $mensaje = "No se pudo cambiar la contraseña. Recarga la página e inténtalo de nuevo.";
+    } elseif ($hashActual === '' || !password_verify($actualPw, $hashActual)) {
+        $mensaje = "La contraseña actual no es correcta.";
+    } elseif (mb_strlen($nuevaPw) < 8) {
+        $mensaje = "La nueva contraseña debe tener al menos 8 caracteres.";
+    } elseif ($nuevaPw !== $repetirPw) {
+        $mensaje = "Las contraseñas nuevas no coinciden.";
+    } elseif (hash_equals($actualPw, $nuevaPw)) {
+        $mensaje = "La nueva contraseña no puede ser igual a la actual.";
+    } else {
+        try {
+            $nuevoHash = password_hash($nuevaPw, PASSWORD_DEFAULT);
+            $db->pdo->prepare("UPDATE usuarios SET password = ? WHERE id = ?")
+                    ->execute([$nuevoHash, $usuario["id"]]);
+
+            session_regenerate_id(true);
+            $_SESSION['csrf_password'] = bin2hex(random_bytes(16));
+            $mensaje = "Contraseña actualizada correctamente.";
+
+            // Aviso por correo (si falla, la contraseña ya está cambiada y no pasa nada)
+            $emailAviso  = $datos['email'] ?? $usuario['email'] ?? '';
+            $correoAviso = new CorreoService();
+            if ($correoAviso->enviarAvisoPassword($emailAviso, $datos['nombre'] ?? $usuario['nombre'] ?? '')) {
+                $mensaje .= " Te hemos enviado un aviso por correo.";
+            }
+        } catch (Throwable $e) {
+            $mensaje = "No se pudo cambiar la contraseña. Inténtalo más tarde.";
         }
     }
 }
@@ -225,7 +273,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
             $colBookId    = $colMap['book id'] ?? null;
             $colPaginas   = $colMap['number of pages'] ?? null;
             $colNota      = $colMap['my rating'] ?? null;
-            $colShelves = $colMap['bookshelves'] ?? null;
+            $colShelves   = $colMap['bookshelves'] ?? null;
 
             $isbnValido = function ($raw): string {
                 $v = strtoupper(preg_replace('/[^0-9X]/i', '', (string)$raw));
@@ -307,12 +355,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["importar_goodreads"])
                     '/Reads/img/default_cover.jpg', $libro['estado'],
                     $libro['autor'], $libro['fecha_fin']
                 );
+
                 if ($colGen && !empty($libro['generos'])) {
-                try {
-                 $db->pdo->prepare("UPDATE listas_lectura SET `{$colGen}` = ? WHERE usuario_id = ? AND libro_id = ?")
-                    ->execute([implode(', ', $libro['generos']), $usuario["id"], $libro['id_ref']]);
-                 } catch (Throwable $e) {}
-                    }
+                    try {
+                        $db->pdo->prepare("UPDATE listas_lectura SET `{$colGen}` = ? WHERE usuario_id = ? AND libro_id = ?")
+                                ->execute([implode(', ', $libro['generos']), $usuario["id"], $libro['id_ref']]);
+                    } catch (Throwable $e) {}
+                }
 
                 if ($libro['paginas'] > 0) {
                     try {
@@ -432,9 +481,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
             $_SESSION['contacto_ultimo'] = time();
             $mensaje = "¡Gracias por contactarnos! Tu mensaje ha sido enviado correctamente.";
         } else {
-            $esAdminTmp = (strtolower(trim($datos['email'] ?? '')) === 'admin@admin.com');
-           $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde."
-         . ($correoService->ultimoError !== '' ? ' [Detalle: ' . $correoService->ultimoError . ']' : '');
+            $mensaje = "Hubo un problema al enviar el mensaje. Inténtalo más tarde."
+                     . ($correoService->ultimoError !== '' ? ' [Detalle: ' . $correoService->ultimoError . ']' : '');
         }
     }
 }
@@ -445,7 +493,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-     <?php include __DIR__ . '/pwa_head.php'; ?>
+    <?php include __DIR__ . '/pwa_head.php'; ?>
     <title>Ajustes de la aplicación</title>
     <link rel="stylesheet" href="/Reads/temas/<?= htmlspecialchars($tema) ?>.css?v=<?= @filemtime(__DIR__ . '/../temas/' . $tema . '.css') ?>">
     <link rel="stylesheet" href="/Reads/public/css/styles.css?v=<?= filemtime(__DIR__ . '/css/styles.css') ?>">
@@ -472,7 +520,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
     </div>
 
     <?php if ($mensaje): ?>
-        <div class="panel alert-box" id="mensaje-ajustes" role="status" style="margin-bottom: 20px; font-weight: bold;">
+        <div class="panel alert-box" id="mensaje-ajustes" role="status" style="margin-bottom: 20px;">
             <?= htmlspecialchars($mensaje) ?>
         </div>
     <?php endif; ?>
@@ -563,6 +611,48 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
         </form>
     </div>
 
+    <!-- Cambiar contraseña -->
+    <div class="panel card-panel">
+        <h2 class="card-title">Cambiar contraseña</h2>
+        <p class="card-subtitle">Introduce tu contraseña actual y elige una nueva (mínimo 8 caracteres).</p>
+
+        <form method="POST" autocomplete="off">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['csrf_password']) ?>">
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="password_actual">Contraseña actual:</label>
+                    <input type="password" id="password_actual" name="password_actual" class="form-control js-pw"
+                           required autocomplete="current-password">
+                </div>
+
+                <div class="form-group"></div>
+
+                <div class="form-group">
+                    <label for="password_nueva">Nueva contraseña:</label>
+                    <input type="password" id="password_nueva" name="password_nueva" class="form-control js-pw"
+                           required minlength="8" autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label for="password_repetir">Repite la nueva contraseña:</label>
+                    <input type="password" id="password_repetir" name="password_repetir" class="form-control js-pw"
+                           required minlength="8" autocomplete="new-password">
+                </div>
+            </div>
+
+            <label style="display:flex; align-items:center; gap:8px; margin:6px 0 14px; font-size:.9rem; cursor:pointer;">
+                <input type="checkbox" id="verPasswords" style="width:auto; margin:0;"
+                       onchange="document.querySelectorAll('.js-pw').forEach(function (i) { i.type = this.checked ? 'text' : 'password'; }, this)">
+                Mostrar contraseñas
+            </label>
+
+            <div class="btn-submit-container">
+                <button type="submit" name="cambiar_password" class="submit-btn btn-pill">Cambiar contraseña</button>
+            </div>
+        </form>
+    </div>
+
     <!-- Importar / Exportar Goodreads -->
     <div class="panel card-panel">
         <h2 class="card-title"> Importar / Exportar Goodreads</h2>
@@ -614,7 +704,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
         </form>
     </div>
 
-           <!-- Eliminar cuenta -->
+    <!-- Eliminar cuenta -->
     <div class="zona-eliminar">
         <span>¿Quieres dejar Reads?</span>
         <button type="button" class="btn-eliminar-cuenta" onclick="document.getElementById('dlg-eliminar').showModal()">Eliminar mi cuenta</button>
@@ -642,13 +732,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["enviar_contacto"])) {
             </div>
         </form>
     </dialog>
-<!-- Footer -->
-<footer class="site-footer">
-    <span style="font-size: 0.85rem; color: #777;">Reads &copy; <?= date("Y") ?></span>
-    <a href="logout.php" class="btn-logout-footer">
-        <span>🚪</span> Cerrar sesión
-    </a>
-</footer>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <span style="font-size: 0.85rem; color: #777;">Reads &copy; <?= date("Y") ?></span>
+        <a href="logout.php" class="btn-logout-footer">
+            <span>🚪</span> Cerrar sesión
+        </a>
+    </footer>
 
 </div>
 
@@ -712,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     <?php if ($abrirEliminar): ?>
     document.getElementById('dlg-eliminar').showModal();
-<?php endif; ?>
+    <?php endif; ?>
 });
 </script>
 <?php if ($iniciarCola): ?>

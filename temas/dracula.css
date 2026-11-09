@@ -2,32 +2,32 @@
 
 :root {
     color-scheme: dark;
-    --bg-main: #282a36;
-    --bg-card: #343746;
-    --bg-chip: #3d4054;
-    --border-color: #565a7e;
-    --text-color: #f8f8f2;
-    --text-muted: #9aa5ce;
+    --bg-main: #0d0d0f;
+    --bg-card: #17171b;
+    --bg-chip: #202026;
+    --border-color: #3d2327;
+    --text-color: #f3eeee;
+    --text-muted: #a89a9c;
 
-    --primary-color: #9d5cf0;
+    --primary-color: #e02438;
     --primary-contrast: #ffffff;
-    --primary-soft: rgba(157, 92, 240, .28);
-    --heading-color: #ff79c6;
-    --link-color: #8be9fd;
-    --progress-color: linear-gradient(90deg, #bd93f9, #ff79c6);
-    --star-color: #f1fa8c;
+    --primary-soft: rgba(224, 36, 56, .24);
+    --heading-color: #ff4d5e;
+    --link-color: #ff7b86;
+    --progress-color: linear-gradient(90deg, #8b1220, #ff3b4e);
+    --star-color: #ffb547;
 
-    --bg-decor: radial-gradient(900px 500px at 100% -10%, rgba(189, 147, 249, .20) 0%, transparent 60%),
-                radial-gradient(700px 500px at 0% 0%, rgba(255, 121, 198, .10) 0%, transparent 55%);
-    --shadow-card: 0 8px 24px rgba(0, 0, 0, .35);
-    --glass: rgba(61, 64, 84, .88);
-    --nav-bg: rgba(52, 55, 70, .94);
-    --nav-text: #e6e6f0;
+    --bg-decor: radial-gradient(900px 500px at 100% -10%, rgba(224, 36, 56, .20) 0%, transparent 60%),
+                radial-gradient(700px 500px at 0% 0%, rgba(139, 18, 32, .16) 0%, transparent 55%);
+    --shadow-card: 0 8px 24px rgba(0, 0, 0, .55);
+    --glass: rgba(32, 32, 38, .88);
+    --nav-bg: rgba(20, 20, 24, .94);
+    --nav-text: #f0e6e7;
 
-    --bg-biblioteca: #282a36;
-    --texto-biblioteca: #f8f8f2;
-    --madera-balda: linear-gradient(to bottom, #bd93f9, #9562df 40%, #6272a4);
-    --borde-estanteria: #bd93f9;
-    --selector-bg: #343746;
-    --selector-borde: #565a7e;
+    --bg-biblioteca: #0d0d0f;
+    --texto-biblioteca: #f3eeee;
+    --madera-balda: linear-gradient(to bottom, #a3182a, #6e0f1b 40%, #3a0910);
+    --borde-estanteria: #7a1420;
+    --selector-bg: #17171b;
+    --selector-borde: #4a2a30;
 }

@@ -133,16 +133,23 @@ class ComunidadService
         return $st->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** Lectores que quizá te interesen */
+    /**
+     * Lectores que quizá te interesen.
+     *  1) Primero, usuarios con libros en común contigo.
+     *  2) Los huecos restantes se rellenan con los últimos usuarios registrados
+     *     (tengan o no libros terminados).
+     * Solo aparecen cuentas verificadas y con perfil visible.
+     */
     public function sugeridos(int $yo, int $limite = 6): array
     {
+        // Paso 1: libros en común
         $st = $this->pdo->prepare(
             "SELECT u.id, u.nombre, u.avatar, COUNT(DISTINCT l2.libro_id) AS en_comun,
                     (SELECT COUNT(*) FROM listas_lectura x WHERE x.usuario_id = u.id AND x.estado = 'leido') AS leidos
              FROM listas_lectura l1
              JOIN listas_lectura l2 ON l2.libro_id = l1.libro_id AND l2.usuario_id <> l1.usuario_id
              JOIN usuarios u ON u.id = l2.usuario_id
-             WHERE l1.usuario_id = ? AND " . self::VISIBLE . "
+             WHERE l1.usuario_id = ? AND u.verificado = 1 AND " . self::VISIBLE . "
                AND u.id NOT IN (SELECT seguido_id FROM seguidores WHERE seguidor_id = ?)
              GROUP BY u.id, u.nombre, u.avatar
              ORDER BY en_comun DESC, leidos DESC
@@ -151,16 +158,17 @@ class ComunidadService
         $st->execute([$yo, $yo]);
         $filas = $st->fetchAll(PDO::FETCH_ASSOC);
 
+        // Paso 2: relleno con los usuarios más recientes (incluye a quienes aún no tienen libros)
         if (count($filas) < $limite) {
             $ya = array_map(fn($f) => (int)$f['id'], $filas);
             $st = $this->pdo->prepare(
                 "SELECT u.id, u.nombre, u.avatar, 0 AS en_comun, COUNT(l.id) AS leidos
                  FROM usuarios u
-                 JOIN listas_lectura l ON l.usuario_id = u.id AND l.estado = 'leido'
-                 WHERE u.id <> ? AND " . self::VISIBLE . "
+                 LEFT JOIN listas_lectura l ON l.usuario_id = u.id AND l.estado = 'leido'
+                 WHERE u.id <> ? AND u.verificado = 1 AND " . self::VISIBLE . "
                    AND u.id NOT IN (SELECT seguido_id FROM seguidores WHERE seguidor_id = ?)
                  GROUP BY u.id, u.nombre, u.avatar
-                 ORDER BY leidos DESC
+                 ORDER BY u.id DESC
                  LIMIT " . (int)($limite + count($ya) + 5)
             );
             $st->execute([$yo, $yo]);

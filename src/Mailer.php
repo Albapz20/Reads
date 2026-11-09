@@ -3,17 +3,25 @@ require_once __DIR__ . "/PHPMailer/Exception.php";
 require_once __DIR__ . "/PHPMailer/PHPMailer.php";
 require_once __DIR__ . "/PHPMailer/SMTP.php";
 
+if (!defined('APP_BASE') && file_exists(__DIR__ . '/../config/config.php')) {
+    require_once __DIR__ . '/../config/config.php';
+}
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
 class Mailer
 {
+    public static string $ultimoError = '';
+
     public static function enviarVerificacion($email, $nombre, $token): bool
     {
+        self::$ultimoError = '';
         $config = require __DIR__ . "/../config/config_mail.php";
 
         $esquema = (!empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off") ? "https" : "http";
-        $enlace  = $esquema . "://" . $_SERVER["HTTP_HOST"] . "/Reads/public/verificar.php?token=" . urlencode($token);
+        $base    = defined('APP_BASE') ? rtrim(APP_BASE, '/') : '';
+        $enlace  = $esquema . "://" . $_SERVER["HTTP_HOST"] . $base . "/public/verificar.php?token=" . urlencode($token);
         $nombreSeguro = htmlspecialchars($nombre);
 
         $mail = new PHPMailer(true);
@@ -22,11 +30,12 @@ class Mailer
             $mail->isSMTP();
             $mail->Host       = $config["host"];
             $mail->SMTPAuth   = true;
-            $mail->Username   = $config["usuario"];
-            $mail->Password   = $config["password"];
+            $mail->Username   = trim($config["usuario"]);
+            $mail->Password   = str_replace(' ', '', $config["password"]);
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = $config["puerto"];
             $mail->CharSet    = "UTF-8";
+            $mail->Timeout    = 15;
 
             $mail->setFrom($config["usuario"], "Reads");
             $mail->addAddress($email, $nombre);
@@ -42,7 +51,8 @@ class Mailer
             $mail->send();
             return true;
         } catch (Exception $e) {
-            error_log("Error enviando email de verificación: " . $mail->ErrorInfo);
+            self::$ultimoError = $mail->ErrorInfo !== '' ? $mail->ErrorInfo : $e->getMessage();
+            error_log("Error enviando email de verificación: " . self::$ultimoError);
             return false;
         }
     }

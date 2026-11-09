@@ -31,6 +31,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 $pendiente       = $_GET['pendiente'] ?? '';   // "1" = email enviado, "error" = fallo al enviar
 $verificado      = isset($_GET['verificado']);
 $cuentaEliminada = isset($_GET['cuenta_eliminada']);
+$passCambiada = isset($_GET['pass_cambiada']);
 
 ?>
 <!DOCTYPE html>
@@ -92,6 +93,10 @@ $cuentaEliminada = isset($_GET['cuenta_eliminada']);
             <?php if ($mensaje): ?>
                 <p class="rg-error" role="alert">⚠️ <?= htmlspecialchars($mensaje) ?></p>
             <?php endif; ?>
+            
+            <?php if ($passCambiada && !$mensaje): ?>
+    <p class="rg-ok" role="status">✅ Contraseña actualizada. Ya puedes iniciar sesión.</p>
+<?php endif; ?>
 
             <form method="POST" autocomplete="on">
 
@@ -109,7 +114,7 @@ $cuentaEliminada = isset($_GET['cuenta_eliminada']);
                     <button type="button" class="rg-ojo" id="rgOjo" aria-label="Mostrar u ocultar la contraseña">👁️</button>
                 </div>
 
-                <span class="rg-olvido"><a href="recuperar_contrase%C3%B1a.php">¿Olvidaste tu contraseña?</a></span>
+                <span class="rg-olvido"><a href="recuperar_password.php">¿Olvidaste tu contraseña?</a></span>
 
                 <button type="submit" class="rg-boton">Entrar</button>
             </form>

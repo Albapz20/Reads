@@ -75,6 +75,7 @@ $gradienteBanda = AvatarHelper::gradienteTema($tema);
 
 // Guardar valoraciones desde el perfil: se escribe en listas_lectura Y en puntuaciones
 // (libro.php y la biblioteca leen de puntuaciones, así que ambas deben quedar iguales)
+// Nota: la columna "tension" ahora representa "Terror"
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_valoraciones"])) {
     $idLista = (int)($_POST["libro_id"] ?? 0);
 
@@ -84,13 +85,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_valoraciones"
 
     if ($fila) {
         $limitar = fn($v) => max(0, min(5, round((float)$v * 2) / 2));
-        $est  = $limitar($_POST["estrellas"]  ?? 0);
-        $rom  = $limitar($_POST["romance"]    ?? 0);
-        $spi  = $limitar($_POST["spicy"]      ?? 0);
-        $lag  = $limitar($_POST["lagrimas"]   ?? 0);
-        $plot = $limitar($_POST["plot_twist"] ?? 0);
-        $hum  = $limitar($_POST["humor"]      ?? 0);
-        $ten  = $limitar($_POST["tension"]    ?? 0);
+        $est  = $limitar($_POST["estrellas"]    ?? 0);
+        $rom  = $limitar($_POST["romance"]      ?? 0);
+        $spi  = $limitar($_POST["spicy"]        ?? 0);
+        $lag  = $limitar($_POST["lagrimas"]     ?? 0);
+        $plot = $limitar($_POST["plot_twist"]   ?? 0);
+        $hum  = $limitar($_POST["humor"]        ?? 0);
+        $ten  = $limitar($_POST["tension"]      ?? 0);   // ahora es "terror"
+        $ori  = $limitar($_POST["originalidad"] ?? 0);
 
         // 1) listas_lectura (amor = romance)
         try {
@@ -107,13 +109,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["guardar_valoraciones"
             $claveExistente = $stExiste->fetchColumn();
 
             if ($claveExistente !== false) {
-                $db->pdo->prepare("UPDATE puntuaciones SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?, humor = ?, tension = ?
+                $db->pdo->prepare("UPDATE puntuaciones SET estrellas = ?, romance = ?, spicy = ?, lagrimas = ?, plot_twist = ?, humor = ?, tension = ?, originalidad = ?
                                    WHERE usuario_id = ? AND libro_id = ?")
-                        ->execute([$est, $rom, $spi, $lag, $plot, $hum, $ten, $usuario["id"], $claveExistente]);
+                        ->execute([$est, $rom, $spi, $lag, $plot, $hum, $ten, $ori, $usuario["id"], $claveExistente]);
             } else {
-                $db->pdo->prepare("INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                        ->execute([$usuario["id"], $claveExterna, $est, $rom, $spi, $lag, $plot, $hum, $ten]);
+                $db->pdo->prepare("INSERT INTO puntuaciones (usuario_id, libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension, originalidad)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                        ->execute([$usuario["id"], $claveExterna, $est, $rom, $spi, $lag, $plot, $hum, $ten, $ori]);
             }
         } catch (Throwable $e) {}
     }
@@ -132,7 +134,7 @@ $abandonados = $listaService->obtenerLista($usuario["id"], "abandonado") ?? [];
 // Puntuaciones del usuario (tabla que usa libro.php), indexadas por libro_id
 $mapaPuntuaciones = [];
 try {
-    $stPunt = $db->pdo->prepare("SELECT libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension FROM puntuaciones WHERE usuario_id = ?");
+    $stPunt = $db->pdo->prepare("SELECT libro_id, estrellas, romance, spicy, lagrimas, plot_twist, humor, tension, originalidad FROM puntuaciones WHERE usuario_id = ?");
     $stPunt->execute([$usuario["id"]]);
     foreach ($stPunt->fetchAll(PDO::FETCH_ASSOC) as $p) {
         $mapaPuntuaciones[(string)$p["libro_id"]] = $p;
@@ -144,13 +146,14 @@ function conPuntuaciones(array $lista, array $mapa): array {
     foreach ($lista as &$libro) {
         $p = $mapa[(string)($libro["libro_id"] ?? '')] ?? $mapa[(string)($libro["id"] ?? '')] ?? null;
         if (!$p) continue;
-        if ((float)($p["estrellas"]   ?? 0) > 0) $libro["estrellas"]  = $p["estrellas"];
-        if ((float)($p["romance"]     ?? 0) > 0) $libro["amor"]       = $p["romance"];
-        if ((float)($p["spicy"]       ?? 0) > 0) $libro["spicy"]      = $p["spicy"];
-        if ((float)($p["lagrimas"]    ?? 0) > 0) $libro["lagrimas"]   = $p["lagrimas"];
-        if ((float)($p["plot_twist"]  ?? 0) > 0) $libro["plot_twist"] = $p["plot_twist"];
-        if ((float)($p["humor"]       ?? 0) > 0) $libro["humor"]      = $p["humor"];
-        if ((float)($p["tension"]     ?? 0) > 0) $libro["tension"]    = $p["tension"];
+        if ((float)($p["estrellas"]     ?? 0) > 0) $libro["estrellas"]     = $p["estrellas"];
+        if ((float)($p["romance"]       ?? 0) > 0) $libro["amor"]          = $p["romance"];
+        if ((float)($p["spicy"]         ?? 0) > 0) $libro["spicy"]         = $p["spicy"];
+        if ((float)($p["lagrimas"]      ?? 0) > 0) $libro["lagrimas"]      = $p["lagrimas"];
+        if ((float)($p["plot_twist"]    ?? 0) > 0) $libro["plot_twist"]    = $p["plot_twist"];
+        if ((float)($p["humor"]         ?? 0) > 0) $libro["humor"]         = $p["humor"];
+        if ((float)($p["tension"]       ?? 0) > 0) $libro["tension"]       = $p["tension"];
+        if ((float)($p["originalidad"]  ?? 0) > 0) $libro["originalidad"]  = $p["originalidad"];
     }
     unset($libro);
     return $lista;
@@ -181,9 +184,53 @@ $leyendo     = conReseñas($leyendo,     $mapaReseñas);
 $leidos      = conReseñas($leidos,      $mapaReseñas);
 $abandonados = conReseñas($abandonados, $mapaReseñas);
 
+// ---------- Calendario (igual que en el inicio) ----------
+$hoyStr = date('Y-m-d');
+$mesesNombre = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio',
+                7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
+$diasSemana = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
+
+$anotadoHoy = false;
+$rachaCal = 0;
+$proxLanz = [];
+try {
+    $stmtHoy = $db->pdo->prepare("SELECT COALESCE(SUM(paginas_leidas), 0) FROM diario_lectura WHERE usuario_id = ? AND fecha = ?");
+    $stmtHoy->execute([$usuario["id"], $hoyStr]);
+    $anotadoHoy = ((int)$stmtHoy->fetchColumn() > 0);
+
+    $stmtRachaCal = $db->pdo->prepare("SELECT DISTINCT fecha FROM diario_lectura WHERE usuario_id = ? AND fecha <= ? ORDER BY fecha DESC LIMIT 400");
+    $stmtRachaCal->execute([$usuario["id"], $hoyStr]);
+    $fechasLectura = array_flip($stmtRachaCal->fetchAll(PDO::FETCH_COLUMN));
+    $cursorCal = new DateTime($hoyStr);
+    if (!isset($fechasLectura[$cursorCal->format('Y-m-d')])) $cursorCal->modify('-1 day'); // si hoy aún no has anotado, cuenta desde ayer
+    while (isset($fechasLectura[$cursorCal->format('Y-m-d')])) {
+        $rachaCal++;
+        $cursorCal->modify('-1 day');
+    }
+
+    $stmtProx = $db->pdo->prepare("SELECT titulo, fecha_lanzamiento
+                                   FROM lanzamientos_deseados
+                                   WHERE usuario_id = ? AND fecha_lanzamiento >= ?
+                                   ORDER BY fecha_lanzamiento ASC LIMIT 3");
+    $stmtProx->execute([$usuario["id"], $hoyStr]);
+    $proxLanz = $stmtProx->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {}
+
+if (!function_exists('textoCuentaAtras')) {
+    function textoCuentaAtras(string $fecha): string {
+        $dias = (int)((strtotime($fecha) - strtotime(date('Y-m-d'))) / 86400);
+        if ($dias <= 0) return '¡Hoy!';
+        if ($dias === 1) return 'Mañana';
+        return "En {$dias} días";
+    }
+}
+if (!function_exists('e')) {
+    function e($texto) { return htmlspecialchars($texto ?? '', ENT_QUOTES, 'UTF-8'); }
+}
+
 // Datos para compartir la lista de deseos / Wishlist
 $protocolo = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
-$urlDeseosPublica = $protocolo . "://" . $_SERVER['HTTP_HOST'] . "/Reads/vistas/lista_deseos.php?usuario_id=" . $usuario["id"];
+$urlDeseosPublica = $protocolo . "://" . $_SERVER['HTTP_HOST'] . "/Reads/public/lista_deseos.php?usuario_id=" . $usuario["id"];
 $urlQR = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" . urlencode($urlDeseosPublica);
 $textoWhatsApp = urlencode("¡Hola! Te comparto mi wishlist de libros para que veas cuáles me gustaría leer: " . $urlDeseosPublica);
 
@@ -199,32 +246,17 @@ function estrellasTexto(float $v): string {
     return rtrim(rtrim(number_format($v, 1, '.', ''), '0'), '.') . ' ★';
 }
 
-// Select de estrellas con medias
-function selectEstrellas(float $actual): string {
-    $html = '<select name="estrellas" class="input-select">';
-    for ($i = 0; $i <= 10; $i++) {
-        $v = $i / 2;
-        $completas = (int)floor($v);
-        $media = ($v - $completas) >= 0.5;
-        $texto = $i === 0 ? 'Sin valorar' : str_repeat('★', $completas) . ($media ? '⯨' : '');
-        $sel = abs($actual - $v) < 0.01 ? 'selected' : '';
-        $html .= '<option value="' . $v . '" ' . $sel . '>' . $texto . '</option>';
+// Selector de iconos con medias notas (igual que en libro.php)
+function selectorIconos(string $name, string $etiqueta, string $icono, float $actual): string {
+    $html  = '<div class="fila-valoracion">';
+    $html .= '<label>' . $etiqueta . ' <span class="val-num">' . $actual . '</span>/5</label>';
+    $html .= '<div class="icon-selector" data-campo="' . $name . '">';
+    for ($i = 1; $i <= 5; $i++) {
+        $html .= '<span data-val="' . $i . '">' . $icono . '</span>';
     }
-    return $html . '</select>';
-}
-
-// Select de nivel 0-5 con emoji (spicy, amor, plot twist, lágrimas)
-function selectNivel(string $name, string $emoji, float $actual, string $vacio = 'Ninguno'): string {
-    $html = '<select name="' . $name . '" class="input-select">';
-    for ($i = 0; $i <= 10; $i++) {
-        $v = $i / 2;
-        $completas = (int)floor($v);
-        $media = ($v - $completas) >= 0.5;
-        $texto = $i === 0 ? $vacio : str_repeat($emoji, $completas) . ($media ? '½' : '');
-        $sel = abs($actual - $v) < 0.01 ? 'selected' : '';
-        $html .= '<option value="' . $v . '" ' . $sel . '>' . $texto . '</option>';
-    }
-    return $html . '</select>';
+    $html .= '</div>';
+    $html .= '<input type="hidden" name="' . $name . '" value="' . $actual . '">';
+    return $html . '</div>';
 }
 
 // Tarjeta compacta de libro + panel de gestión (dentro de un <template>, se abre en un modal)
@@ -244,7 +276,8 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
     $plotTwistActual    = (float)($libro["plot_twist"] ?? 0);
     $lagrimasActuales   = (float)($libro["lagrimas"] ?? 0);
     $humorActual        = (float)($libro["humor"] ?? 0);
-    $tensionActual      = (float)($libro["tension"] ?? 0);
+    $tensionActual      = (float)($libro["tension"] ?? 0);        // "Terror"
+    $originalidadActual = (float)($libro["originalidad"] ?? 0);
     $tituloEscapado     = htmlspecialchars($libro["titulo"], ENT_QUOTES);
     $autorEscapado      = htmlspecialchars($libro["autores"] ?? "", ENT_QUOTES);
     $portada            = htmlspecialchars($libro["portada"] ?? '/Reads/img/default_cover.jpg', ENT_QUOTES);
@@ -368,13 +401,14 @@ function renderizarTarjeta(array $libro, bool $esListaDeseos, int $orden): void 
                         <input type="hidden" name="guardar_valoraciones" value="1">
                         <input type="hidden" name="libro_id" value="<?= (int)$libro["id"] ?>">
 
-                        <div class="fila-valoracion"><label>⭐ Estrellas:</label><?= selectEstrellas($estrellasActuales) ?></div>
-                        <div class="fila-valoracion"><label>🌶️ Spicy:</label><?= selectNivel('spicy', '🌶️', $spicyActual) ?></div>
-                        <div class="fila-valoracion"><label>💖 Romance:</label><?= selectNivel('romance', '💖', $amorActual) ?></div>
-                        <div class="fila-valoracion"><label>🌀 Plot Twist:</label><?= selectNivel('plot_twist', '🌀', $plotTwistActual) ?></div>
-                        <div class="fila-valoracion"><label>💧 Lágrimas:</label><?= selectNivel('lagrimas', '💧', $lagrimasActuales, 'Ninguna') ?></div>
-                        <div class="fila-valoracion"><label>😂 Humor:</label><?= selectNivel('humor', '😂', $humorActual) ?></div>
-                        <div class="fila-valoracion"><label>😱 Tensión:</label><?= selectNivel('tension', '😱', $tensionActual) ?></div>
+                        <?= selectorIconos('estrellas',    '⭐ Estrellas:',      '★',  $estrellasActuales) ?>
+                        <?= selectorIconos('romance',      '💖 Romance:',        '💖', $amorActual) ?>
+                        <?= selectorIconos('spicy',        '🌶️ Spicy:',          '🌶️', $spicyActual) ?>
+                        <?= selectorIconos('lagrimas',     '💧 Lágrimas:',       '💧', $lagrimasActuales) ?>
+                        <?= selectorIconos('plot_twist',   '⚡ Plot Twist:',     '⚡', $plotTwistActual) ?>
+                        <?= selectorIconos('humor',        '😂 Humor:',          '😂', $humorActual) ?>
+                        <?= selectorIconos('tension',      '👻 Terror:',         '👻', $tensionActual) ?>
+                        <?= selectorIconos('originalidad', '💡 Originalidad:',   '💡', $originalidadActual) ?>
 
                         <div><button type="submit" class="btn-accion">Guardar valoraciones</button></div>
                     </form>
@@ -490,13 +524,13 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
 
 <div class="container">
 
-        <?php if ($avatarMsg): ?>
+    <?php if ($avatarMsg): ?>
         <div class="perfil-card avatar-aviso <?= $avatarMsg['tipo'] === 'error' ? 'error' : '' ?>">
             <?= $avatarMsg['tipo'] === 'ok' ? '✅' : '⚠️' ?> <?= htmlspecialchars($avatarMsg['texto']) ?>
         </div>
     <?php endif; ?>
 
-      <!-- Banner de perfil -->
+    <!-- Banner de perfil -->
     <div class="perfil-card perfil-banner-container con-banda">
         <div class="pf-banner" style="background: <?= htmlspecialchars($gradienteBanda) ?>;"></div>
 
@@ -557,6 +591,45 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
         renderizarPanel('guardados', $guardados, true);
         ?>
 
+    </div>
+
+    <!-- Calendario (debajo de las lecturas) -->
+    <div class="perfil-card">
+        <div class="perfil-card-header">
+            <h2 class="perfil-card-titulo">📅 Calendario</h2>
+        </div>
+
+        <div class="cal-hoy">
+            <div class="cal-fecha">
+                <strong><?= (int)date('j') ?></strong>
+                <small><?= e(mb_substr($mesesNombre[(int)date('n')], 0, 3)) ?></small>
+            </div>
+            <div class="cal-texto">
+                <span><?= e(ucfirst($diasSemana[(int)date('N')])) ?></span>
+                <small>
+                    <?= $anotadoHoy ? 'Hoy ya has anotado lectura ✔' : 'Aún no has anotado lectura hoy' ?>
+                    <?php if ($rachaCal > 0): ?>
+                        · Racha: <?= $rachaCal ?> <?= $rachaCal === 1 ? 'día' : 'días' ?>
+                    <?php endif; ?>
+                </small>
+            </div>
+        </div>
+
+        <?php if (!empty($proxLanz)): ?>
+            <ul class="cal-lista">
+                <?php foreach ($proxLanz as $lz): ?>
+                    <li>
+                        <span class="cal-dia"><?= e(textoCuentaAtras($lz['fecha_lanzamiento'])) ?></span>
+                        <span class="cal-titulo"><?= e($lz['titulo']) ?></span>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+
+        <div class="cal-botones">
+            <a href="calendario.php?hoy=1" class="hm-btn">Anotar lectura de hoy</a>
+            <a href="calendario.php" class="cal-enlace">Ver calendario</a>
+        </div>
     </div>
 
 </div>
@@ -623,14 +696,12 @@ function renderizarPanel(string $id, array $lista, bool $esListaDeseos, bool $ac
         <a href="index.php" class="nav-card-float"><span class="nav-icon">🏠</span><span>Inicio</span></a>
         <a href="perfil.php" class="nav-card-float active"><span class="nav-icon">👤</span><span>Perfil</span></a>
         <a href="biblioteca.php" class="nav-card-float"><span class="nav-icon">📚</span><span>Estantería</span></a>
-     
         <a href="comunidad.php" class="nav-card-float"><span class="nav-icon">👥</span><span>Comunidad</span></a>
-       
     </nav>
 </div>
 
 <script>
-const LIBROS_POR_PAGINA = 24;
+const LIBROS_POR_PAGINA = 9;
 const PESTANAS = ['tbr', 'leyendo', 'leidos', 'abandonados', 'guardados'];
 
 const normaliza = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -713,10 +784,40 @@ function fotoFormulario(f) {
     return JSON.stringify(Array.from(new FormData(f).entries()).map(([k, v]) => [k, String(v)]));
 }
 
+/*  Selector de iconos con medias notas  */
+function pintarSelector(cont, val) {
+    const esEstrellas = cont.dataset.campo === 'estrellas';
+    cont.querySelectorAll('span').forEach(icon => {
+        const n = parseInt(icon.dataset.val, 10);
+        if (n <= val) {
+            icon.style.opacity = '1';
+            icon.style.filter = 'grayscale(0%)';
+            icon.style.color = esEstrellas ? '#f5b301' : '';
+        } else if (n - 0.5 === val) {
+            icon.style.opacity = '0.6';
+            icon.style.filter = 'grayscale(30%)';
+            icon.style.color = esEstrellas ? '#f5b301' : '';
+        } else {
+            icon.style.opacity = '0.25';
+            icon.style.filter = 'grayscale(100%)';
+            icon.style.color = '';
+        }
+    });
+}
+
+function iniciarSelectores(raiz) {
+    raiz.querySelectorAll('.icon-selector').forEach(cont => {
+        const input = cont.closest('.fila-valoracion').querySelector('input[type=hidden]');
+        pintarSelector(cont, parseFloat(input.value) || 0);
+    });
+}
+
 function abrirModal(card) {
     const plantilla = card.querySelector('template.libro-detalle');
     if (!plantilla) return;
     modalCuerpo.replaceChildren(plantilla.content.cloneNode(true));
+
+    iniciarSelectores(modalCuerpo);
 
     // Valores iniciales de cada formulario (para "Guardar todos los cambios")
     modalCuerpo.querySelectorAll('form[data-todo]').forEach(f => {
@@ -772,6 +873,28 @@ modalCuerpo.addEventListener('click', async e => {
         btn.disabled = false;
         msg.textContent = 'No se pudo guardar todo. Inténtalo de nuevo.';
     }
+});
+
+// Clic en un icono: izquierda = media nota, derecha = nota entera
+modalCuerpo.addEventListener('click', e => {
+    const icon = e.target.closest('.icon-selector > span');
+    if (!icon) return;
+
+    const cont  = icon.parentElement;
+    const fila  = cont.closest('.fila-valoracion');
+    const input = fila.querySelector('input[type=hidden]');
+    const num   = fila.querySelector('.val-num');
+
+    const rect  = icon.getBoundingClientRect();
+    const base  = parseInt(icon.dataset.val, 10);
+    let valor   = ((e.clientX - rect.left) < rect.width / 2) ? base - 0.5 : base;
+
+    // Pulsar otra vez el mismo valor lo pone a 0 (así se puede quitar la nota)
+    if (valor === (parseFloat(input.value) || 0)) valor = 0;
+
+    input.value = valor;
+    num.textContent = valor;
+    pintarSelector(cont, valor);
 });
 
 document.getElementById('modalCerrar').addEventListener('click', () => modal.close());

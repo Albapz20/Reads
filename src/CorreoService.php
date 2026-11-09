@@ -99,4 +99,62 @@ class CorreoService {
             return false;
         }
     }
+        /** Avisa al usuario de que su contraseña ha cambiado (nunca incluye la contraseña) */
+    public function enviarAvisoPassword($emailUsuario, $nombreUsuario): bool {
+        $this->ultimoError = '';
+
+        if (!filter_var($emailUsuario, FILTER_VALIDATE_EMAIL)) {
+            $this->ultimoError = 'El correo del usuario no es válido.';
+            return false;
+        }
+        if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+            $this->ultimoError = 'PHPMailer no encontrado.';
+            error_log($this->ultimoError);
+            return false;
+        }
+        if ($this->username === '' || $this->password === '') {
+            $this->ultimoError = 'Faltan smtp_usuario o smtp_password.';
+            error_log($this->ultimoError);
+            return false;
+        }
+
+        $mail = new PHPMailer(true);
+
+        try {
+            $mail->isSMTP();
+            $mail->Host       = $this->host;
+            $mail->SMTPAuth   = true;
+            $mail->Username   = $this->username;
+            $mail->Password   = $this->password;
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = $this->port;
+            $mail->CharSet    = 'UTF-8';
+            $mail->Timeout    = 10;
+
+            $mail->setFrom($this->username, 'Reads App');
+            $mail->addAddress($emailUsuario, (string)$nombreUsuario);
+
+            $nombre = htmlspecialchars((string)$nombreUsuario);
+            $fecha  = date('d/m/Y H:i');
+
+            $mail->isHTML(true);
+            $mail->Subject = 'Tu contraseña de Reads ha cambiado';
+            $mail->Body = "
+                <h2>Contraseña actualizada</h2>
+                <p>Hola" . ($nombre !== '' ? " $nombre" : '') . ",</p>
+                <p>Te avisamos de que la contraseña de tu cuenta de Reads se cambió el <strong>$fecha</strong>.</p>
+                <p>Si has sido tú, no tienes que hacer nada.</p>
+                <p>Si <strong>no</strong> has sido tú, escríbenos cuanto antes desde la sección de contacto de Ajustes o respondiendo a este correo.</p>
+            ";
+            $mail->AltBody = "Hola $nombreUsuario,\n\nLa contraseña de tu cuenta de Reads se cambió el $fecha.\n"
+                           . "Si has sido tú, no tienes que hacer nada. Si no has sido tú, escríbenos cuanto antes.";
+
+            $mail->send();
+            return true;
+        } catch (Exception $e) {
+            $this->ultimoError = $mail->ErrorInfo !== '' ? $mail->ErrorInfo : $e->getMessage();
+            error_log("Error al enviar aviso de contraseña: " . $this->ultimoError);
+            return false;
+        }
+    }
 }
